@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="ConsoleReactiveComponents/ConsoleReactiveComponents.csproj" />
+  <Project Path="ConsoleReactiveFramework/ConsoleReactiveFramework.csproj" />
+  <Project Path="Harness_Shared_Console/Harness_Shared_Console.csproj" />
+  <Project Path="Harness_Shared_Console_OpenAI/Harness_Shared_Console_OpenAI.csproj" />
+  <Project Path="MyAssistant.ApprovalPolicy/MyAssistant.ApprovalPolicy.csproj" />
+  <Project Path="MyAssistant/MyAssistant.csproj" />
+</Solution>

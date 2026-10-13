@@ -1,0 +1,16 @@
+################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+# Build output and IDE folders (generic — applies to every project)
+[Bb]in/
+[Oo]bj/
+.vs/
+
+# Local secrets — never commit (see CLAUDE.md FORBIDDEN FILES)
+appsettings.[Dd]evelopment.json
+*.runsettings
+
+# Reference material (not part of this solution)
+/reference-MAF-dotnet-samples_02-agents_Harness
+/reference-mafclaw/elbruno-mafclaw-bd36a0a
