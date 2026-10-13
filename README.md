@@ -60,7 +60,7 @@ Two things are both called "harness" — keep them straight:
 
 ## Deeper detail
 
-- **[`what-i-changed-in-the-sample.md`](./what-i-changed-in-the-harness.md)** — exactly what I
+- **[`what-i-changed-in-the-sample.md`](./what-i-changed-in-the-sample.md)** — exactly what I
   changed in Microsoft's sample code and why: the durable approval design, the three data layers
   (file access vs. file memory vs. Foundry), how "durable"/"standing" differ between Microsoft's
   framing and this series, and a comparison to Muse.
