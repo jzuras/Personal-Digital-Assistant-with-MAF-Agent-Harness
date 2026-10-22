@@ -1,0 +1,202 @@
+.chat-header {
+    top: 0;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid rgba(160, 185, 230, 0.35);
+    box-shadow: 0 2px 16px rgba(50, 80, 160, 0.07);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+@media (min-width: 768px) {
+    .chat-header {
+        position: sticky;
+    }
+}
+
+.chat-header-content {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+}
+
+.app-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #4152d5, #7b55af);
+    color: #fff;
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(65, 82, 213, 0.3);
+}
+
+    .app-icon svg {
+        width: 1.25rem;
+        height: 1.25rem;
+    }
+
+.header-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.header-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1a1f3a;
+    letter-spacing: -0.01em;
+}
+
+.header-hint {
+    font-size: 0.8125rem;
+    color: #6b7ab8;
+    font-style: italic;
+}
+
+.chat-container {
+    position: sticky;
+    bottom: 0;
+    padding: 0.75rem 1.5rem 1.5rem;
+    border-top: 1px solid rgba(180, 200, 240, 0.5);
+    background: linear-gradient(to bottom, rgba(236, 238, 248, 0.85), rgba(236, 238, 248, 0.98));
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+/* Human-in-the-loop approval prompt for a gated server tool */
+.approval-panel {
+    position: sticky;
+    bottom: 5.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin: 0 1.5rem;
+    padding: 0.85rem 1.1rem;
+    border: 1.5px solid #e0b000;
+    border-radius: 12px;
+    background: #fff8e1;
+    box-shadow: 0 4px 16px rgba(160, 130, 0, 0.18);
+}
+
+.approval-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    min-width: 0;
+    flex: 1 1 16rem;
+}
+
+.approval-text {
+    font-size: 0.9rem;
+    color: #5a4600;
+}
+
+.approval-args {
+    list-style: none;
+    margin: 0;
+    padding: 0.4rem 0.6rem;
+    background: rgba(255, 255, 255, 0.55);
+    border: 1px solid rgba(224, 176, 0, 0.45);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+    .approval-args li {
+        display: flex;
+        gap: 0.4rem;
+        align-items: baseline;
+    }
+
+.approval-arg-key {
+    font-weight: 600;
+    color: #5a4600;
+    flex-shrink: 0;
+}
+
+    .approval-arg-key::after {
+        content: ":";
+    }
+
+.approval-arg-value {
+    font-family: Consolas, Menlo, monospace;
+    color: #3a2e00;
+    word-break: break-word;
+    white-space: pre-wrap;
+}
+
+.approval-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+    .approval-actions button {
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 0.875rem;
+        font-weight: 600;
+        border-radius: 8px;
+        padding: 0.4rem 1.1rem;
+        border: none;
+        color: #fff;
+        transition: filter 0.15s ease;
+    }
+
+        .approval-actions button:hover {
+            filter: brightness(1.08);
+        }
+
+.approval-approve {
+    background: #0a6b4f;
+}
+
+.approval-deny {
+    background: #b23a3a;
+}
+
+/* Suggestion chips shown on first load */
+.suggestions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+    .suggestions p {
+        font-size: 1.125rem;
+        color: #8892c4;
+        margin: 0;
+    }
+
+.suggestion-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.suggestion-chip {
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #4152d5;
+    background: rgba(255, 255, 255, 0.8);
+    border: 1.5px solid rgba(140, 165, 220, 0.5);
+    border-radius: 9999px;
+    padding: 0.4rem 1rem;
+    transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+    .suggestion-chip:hover {
+        background: rgba(255, 255, 255, 0.95);
+        border-color: #4152d5;
+        box-shadow: 0 2px 8px rgba(65, 82, 213, 0.12);
+    }

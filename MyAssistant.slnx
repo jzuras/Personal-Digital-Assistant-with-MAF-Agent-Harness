@@ -3,6 +3,8 @@
   <Project Path="ConsoleReactiveFramework/ConsoleReactiveFramework.csproj" />
   <Project Path="Harness_Shared_Console/Harness_Shared_Console.csproj" />
   <Project Path="Harness_Shared_Console_OpenAI/Harness_Shared_Console_OpenAI.csproj" />
+  <Project Path="MuseLite.UI/MuseLite.UI.csproj" />
   <Project Path="MyAssistant.ApprovalPolicy/MyAssistant.ApprovalPolicy.csproj" />
   <Project Path="MyAssistant/MyAssistant.csproj" />
+  <Project Path="MyAssistantServer/MyAssistantServer.csproj" />
 </Solution>

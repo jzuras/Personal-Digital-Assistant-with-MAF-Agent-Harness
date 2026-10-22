@@ -1,0 +1,9 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vs
+/bin/Debug/net10.0
+/obj
+/appsettings.Development.json
+/AG-UI-Example-AgenticUI.csproj.user

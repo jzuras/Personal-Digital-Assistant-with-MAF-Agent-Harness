@@ -1,0 +1,37 @@
+root = false
+
+# Suppress false-positive diagnostics from SDK-generated files
+[obj/**/*.cs]
+dotnet_diagnostic.CS8933.severity = none
+
+[*.cs]
+# Don't require ConfigureAwait in ASP.NET Core apps
+dotnet_diagnostic.CA2007.severity = none
+
+# General exception catch is acceptable in UI error-handling layers
+dotnet_diagnostic.CA1031.severity = none
+
+# XML docs not required in a demo app
+dotnet_diagnostic.CS1591.severity = none
+
+# Allow arrays as properties/return values
+dotnet_diagnostic.CA1819.severity = none
+
+# The project name contains hyphens which become underscores in the namespace — not our choice
+dotnet_diagnostic.CA1707.severity = none
+
+# Blazor convention: component class name matches its containing namespace folder
+dotnet_diagnostic.CA1724.severity = none
+
+# Blazor components and partial classes must be public for the Razor compiler
+dotnet_diagnostic.CA1515.severity = none
+
+# List<T> needed for Blazor component parameters and index operations (FindIndex, etc.)
+dotnet_diagnostic.CA1002.severity = none
+
+# JSON deserialization requires settable collection properties
+dotnet_diagnostic.CA2227.severity = none
+
+# Demo app: structured LoggerMessage delegates are an optimization, not a requirement
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none

@@ -1,0 +1,59 @@
+@page "/"
+@rendermode InteractiveServer
+
+<PageTitle>Muse Lite</PageTitle>
+
+<header class="chat-header main-background-gradient">
+    <div class="chat-header-content page-width">
+        <div class="app-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09ZM18.259 8.715 18 9.75l-.259-1.035a3.375 3.375 0 0 0-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 0 0 2.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 0 0 2.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 0 0-2.456 2.456ZM16.894 20.567 16.5 21.75l-.394-1.183a2.25 2.25 0 0 0-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 0 0 1.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 0 0 1.423 1.423l1.183.394-1.183.394a2.25 2.25 0 0 0-1.423 1.423Z" />
+            </svg>
+        </div>
+        <div class="header-text">
+            <span class="header-title">Muse Lite</span>
+            <span class="header-hint">Ask the agent to plan or execute a multi-step task</span>
+        </div>
+    </div>
+</header>
+
+<ChatMessageList Messages="@messages" InProgressMessage="@currentResponseMessage" Steps="@agentState?.Steps">
+    <NoMessagesContent>
+        <div class="suggestions">
+            <p>Try asking the agent to build a plan, for example:</p>
+            <div class="suggestion-chips">
+                <button class="suggestion-chip" @onclick='() => SendSuggestionAsync("Please build a plan to go to mars in 5 steps.")'>Plan a trip to Mars</button>
+                <button class="suggestion-chip" @onclick='() => SendSuggestionAsync("Please build a plan to make pizza in 10 steps.")'>Make a pizza</button>
+                <button class="suggestion-chip" @onclick='() => SendSuggestionAsync("Please build a plan to learn guitar in 3 steps.")'>Learn guitar</button>
+            </div>
+        </div>
+    </NoMessagesContent>
+</ChatMessageList>
+
+@if (pendingApproval is not null)
+{
+    <div class="approval-panel">
+        <div class="approval-detail">
+            <span class="approval-text">
+                The agent wants to run <strong>@PendingApprovalToolName</strong>. Allow it?
+            </span>
+            @if (PendingApprovalArgs.Count > 0)
+            {
+                <ul class="approval-args">
+                    @foreach (var arg in PendingApprovalArgs)
+                    {
+                        <li><span class="approval-arg-key">@arg.Key</span><span class="approval-arg-value">@arg.Value</span></li>
+                    }
+                </ul>
+            }
+        </div>
+        <div class="approval-actions">
+            <button class="approval-approve" @onclick="() => RespondToApprovalAsync(true)">Approve</button>
+            <button class="approval-deny" @onclick="() => RespondToApprovalAsync(false)">Deny</button>
+        </div>
+    </div>
+}
+
+<div class="chat-container">
+    <ChatInput OnSend="@AddUserMessageAsync" @ref="@chatInput" />
+</div>
