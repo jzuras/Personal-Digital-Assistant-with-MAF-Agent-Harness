@@ -14,8 +14,8 @@ Each post builds on the last; the code here is the companion.
 
 - **Based on** — Roughly follows the series from [this MS Blog Post](https://devblogs.microsoft.com/agent-framework/build-your-own-claw-and-agent-harness-with-microsoft-agent-framework/)
 - **My LinkedIn Post #1** — Setup, and making memory & permissions survive across sessions. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7515815982616068096/))_
-- **My LinkedIn Post #2** — AG-UI Client and Server Apps. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7521940704856576001/))_
-- **My LinkedIn Post #3** — AG-UI Client-Server Approval Round-Trip. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7519104949042089985/))_
+- **My LinkedIn Post #2** — AG-UI Client and Server Apps. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7519104949042089985/))_
+- **My LinkedIn Post #3** — AG-UI Client-Server Approval Round-Trip. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7521940704856576001/))_
 - Post #4 — _TBD (coming soon)._
 
 
