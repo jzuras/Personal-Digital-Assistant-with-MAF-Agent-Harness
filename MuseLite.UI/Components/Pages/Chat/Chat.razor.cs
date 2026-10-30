@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AGUI.Abstractions;
 using MuseLite.UI.Models;
 using Microsoft.Agents.AI;
 using Microsoft.AspNetCore.Components;
@@ -25,6 +26,15 @@ public partial class Chat : IAsyncDisposable
     private ChatInput? chatInput;
     private int statefulMessageCount;
     private string sessionId = Guid.Empty.ToString();
+
+    /// <summary>
+    /// Stable AG-UI thread id for this client instance, pinned on every turn (including approval-resume)
+    /// via <see cref="ChatOptions.RawRepresentationFactory"/>. The server's <c>MyAgentSessionStore</c> routes
+    /// any thread id to its one durable context, but a <em>stable</em> id is what lets an approval resume land
+    /// on the same server session that holds the pending-approval binding (PR #8641 binding is ON). Created
+    /// once per component instance; a page reload mints a new one (see the resume caveat in the design notes).
+    /// </summary>
+    private readonly string threadId = Guid.NewGuid().ToString();
     private ChatMessage? currentResponseMessage;
     private CancellationTokenSource? currentResponseCancellation;
     private AgentState? agentState;
@@ -104,13 +114,18 @@ public partial class Chat : IAsyncDisposable
     }
 
     /// <summary>
-    /// Resume path (documented MAF/AG-UI model): answers a pending
-    /// <see cref="ToolApprovalRequestContent"/> by sending a follow-up turn on the SAME
-    /// <see cref="AgentSession"/> carrying ONLY the user's decision. We do NOT re-send the request:
-    /// stateless resume (request+response in the message list) is rejected by ChatClientAgent since
-    /// MAF PR #8641. The server must hold the pending request via session persistence; AGUIChatClient
-    /// encodes the response as RunAgentInput.Resume[] so the server resumes the paused run.
+    /// Answers a pending <see cref="ToolApprovalRequestContent"/> by resuming the paused server run.
     /// </summary>
+    /// <remarks>
+    /// We build the AG-UI <c>Resume</c> entry OURSELVES and hand it to the client via
+    /// <see cref="ChatOptions.RawRepresentationFactory"/> (see <see cref="GetStreamingResponseAsync"/>),
+    /// sending NO approval message. Under our server-authoritative (delta) model the thread does not carry
+    /// the original request, so the client-side approval pipeline cannot pair request↔response and silently
+    /// drops a response sent as a message (empty Resume on the wire — verified by probe). The resume's
+    /// <c>InterruptId</c> is the request's and the payload
+    /// echoes the full tool call, which is what the server's AG-UI decode uses to rebuild the approval without
+    /// the history we no longer replay. Approve vs. deny is carried by <c>Approved</c>.
+    /// </remarks>
     private async Task RespondToApprovalAsync(bool approved)
     {
         var request = this.pendingApproval;
@@ -125,33 +140,50 @@ public partial class Chat : IAsyncDisposable
         this.currentResponseMessage = new ChatMessage(ChatRole.Assistant, [responseText]);
         this.currentResponseCancellation = new CancellationTokenSource();
 
+        var toolCall = request.ToolCall as FunctionCallContent;
+
         if (!approved)
         {
             // Subtle inline marker so the user sees the gate acted. The denied tool's result is a
             // plain "rejected" string the thread would not otherwise surface, so tag the follow-up
             // assistant message; ChatMessageItem renders a muted "denied" line above its text.
-            var deniedTool = (request.ToolCall as FunctionCallContent)?.Name ?? "the tool";
+            var deniedTool = toolCall?.Name ?? "the tool";
             this.currentResponseMessage.AdditionalProperties = new AdditionalPropertiesDictionary
             {
                 [ToolDeniedPropertyKey] = deniedTool,
             };
         }
 
-        List<ChatMessage> resumeTurn =
+        // Build the AG-UI Resume ourselves: InterruptId = the request id the paused run is keyed by;
+        // payload echoes the tool call so the server can rebuild the approval without replayed history.
+        var payload = JsonSerializer.SerializeToElement(new AGUIToolApprovalResumePayload
+        {
+            Approved = approved,
+            ToolCall = toolCall is null
+                ? null
+                : new AGUIToolCallInfo
+                {
+                    CallId = toolCall.CallId,
+                    Name = toolCall.Name,
+                    Arguments = toolCall.Arguments,
+                },
+        });
+        List<AGUIResume> resume =
         [
-            new(ChatRole.User, [request.CreateResponse(approved, approved ? "Approved by user." : "Denied by user.")]),
+            new() { InterruptId = request.RequestId, Status = ResumeStatus.Resolved, Payload = payload },
         ];
 
         this.Logger.LogInformation(
-            "Resuming approval (response-only): reqId={ReqId} approved={Approved}",
+            "Resuming approval (caller-supplied Resume): reqId={ReqId} approved={Approved}",
             request.RequestId,
             approved);
 
         await this.GetStreamingResponseAsync(
-            resumeTurn,
+            [],
             responseText,
             this.currentResponseMessage,
-            this.currentResponseCancellation.Token);
+            this.currentResponseCancellation.Token,
+            resume);
 
         this.messages.Add(this.currentResponseMessage!);
         this.statefulMessageCount = this.activeSession is not null ? this.messages.Count : 0;
@@ -162,16 +194,49 @@ public partial class Chat : IAsyncDisposable
         IEnumerable<ChatMessage> outboundMessages,
         TextContent responseText,
         ChatMessage responseMessage,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        List<AGUIResume>? resume = null)
     {
         this.Logger.LogInformation("Streaming started");
         var updateCount = 0;
+
+        // Server-authoritative history. Pass a null AgentSession so the client-side AGUIChatClient session does
+        // NOT replay its accumulated thread into RunAgentInput. outboundMessages is already delta-only
+        // (statefulMessageCount advances off the non-null this.activeSession FIELD), so only the new user turn
+        // goes on the wire and the server's one durable context (store=false) supplies the rest of history.
+        //
+        // RawRepresentationFactory pins a STABLE AG-UI thread id (this.threadId) on every turn — including the
+        // approval-resume turn, since RespondToApprovalAsync funnels through here. We do this via a RunAgentInput
+        // rather than a ConversationId on purpose: a non-null ConversationId puts ChatClientAgent in
+        // service-managed mode, which requires the inner client to echo a ConversationId back — but AGUIChatClient
+        // deliberately nulls ConversationId on every response (#4869), so that path throws "Service did not return
+        // a valid conversation id". Driving the wire format through RawRepresentationFactory -> RunAgentInput is
+        // the AGUI.Client-sanctioned seam (see AGUIClientInternalKeys' own guidance) and sets RunAgentInput.ThreadId
+        // directly (its top-priority thread-id source). Verified against Microsoft.Agents.AI 1.26 / AGUI.Client
+        // 1.0.1: delta-only, thread id forwarded, no service-managed crash. The stable thread id is what lets
+        // approval binding (PR #8641, kept ON) resume onto the same durable server session that holds the
+        // pending-approval binding.
+        //
+        // `resume` (non-null only on the approval round-trip from RespondToApprovalAsync) is handed to the client
+        // via the SAME RawRepresentationFactory -> RunAgentInput seam. AGUIChatClient.BuildRunAgentInput treats a
+        // caller-supplied Resume as authoritative (its callerSuppliedResume path) and forwards it straight to the
+        // transport, deliberately BYPASSING the client-side approval pipeline (ApprovalResponseBindingChatClient ->
+        // FunctionInvokingChatClient). That pipeline pairs a ToolApprovalRequest/Response by matching them in the
+        // message list, which our server-authoritative (delta) model does not carry — so sending the response AS A
+        // MESSAGE yields an empty Resume (the resume silently dropped; verified by probe). Building the AGUIResume
+        // ourselves and sending it here (with NO approval message) is the AGUI-sanctioned way to resume without
+        // replaying history. See RespondToApprovalAsync.
+        var runOptions = new ChatClientAgentRunOptions(new ChatOptions
+        {
+            RawRepresentationFactory = _ => new RunAgentInput { ThreadId = this.threadId, Resume = resume },
+        });
 
         try
         {
             await foreach (var update in this.Agent.RunStreamingAsync(
                 outboundMessages,
-                this.activeSession,
+                (AgentSession?)null,
+                runOptions,
                 cancellationToken: cancellationToken))
             {
                 if (update is null)

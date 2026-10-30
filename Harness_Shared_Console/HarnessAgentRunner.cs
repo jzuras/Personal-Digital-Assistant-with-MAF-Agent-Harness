@@ -4,6 +4,7 @@ using Harness.Shared.Console.Commands;
 using Harness.Shared.Console.Observers;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using MyAssistant.DurableContext;
 
 namespace Harness.Shared.Console;
 
@@ -154,6 +155,10 @@ public sealed class HarnessAgentRunner : IDisposable
             ? await this._messageInjector.GetPendingMessagesAsync(this._session).ConfigureAwait(false)
             : [];
 
+        // One-shot guard: if the server-side conversation pointer is stale, we repair the session
+        // and retry the same turn exactly once. The guard prevents a retry loop if it recurs.
+        bool staleConversationRecovered = false;
+
         while (nextMessages is not null)
         {
             var runOptions = new AgentRunOptions();
@@ -202,6 +207,19 @@ public sealed class HarnessAgentRunner : IDisposable
 
                     lastPendingMessages = await this.SyncQueuedMessageDisplayAsync(lastPendingMessages).ConfigureAwait(false);
                 }
+            }
+            catch (Exception ex) when (SessionRecovery.IsStaleConversation(ex) && !staleConversationRecovered)
+            {
+                // The service lost this conversation's server-side state. Repair the session
+                // (drops the stale pointer, keeps the locally-held history) and retry the same turn.
+                staleConversationRecovered = true;
+                await this._ux.WriteInfoLineAsync(
+                    "⚠ The model service lost this conversation's server-side state; retrying with the locally-kept history. Your saved memory files are unaffected.",
+                    ConsoleColor.Yellow).ConfigureAwait(false);
+                this._session = await SessionRecovery.RepairStaleConversationAsync(this._agent, this._session).ConfigureAwait(false);
+                this._ux.StopSpinner();
+                await this._ux.EndStreamingOutputAsync().ConfigureAwait(false);
+                continue;
             }
             catch (Exception ex)
             {

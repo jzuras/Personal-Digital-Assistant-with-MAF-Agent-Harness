@@ -8,15 +8,16 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Agents.AI" Version="1.23.0" />
-    <PackageReference Include="OpenTelemetry" Version="1.19.1" />
-    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.26.0" />
+    <PackageReference Include="OpenTelemetry" Version="1.20.1" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.20.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ConsoleReactiveComponents\ConsoleReactiveComponents.csproj" />
     <ProjectReference Include="..\ConsoleReactiveFramework\ConsoleReactiveFramework.csproj" />
     <ProjectReference Include="..\MyAssistant.ApprovalPolicy\MyAssistant.ApprovalPolicy.csproj" />
+    <ProjectReference Include="..\MyAssistant.DurableContext\MyAssistant.DurableContext.csproj" />
   </ItemGroup>
 
 </Project>

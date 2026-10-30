@@ -12,7 +12,7 @@ namespace MyAssistant.ApprovalPolicy;
 /// </summary>
 /// <remarks>
 /// Rules are cached in memory and loaded once per process; a user editing the file by hand
-/// takes effect on the next run (per the Phase 1 design). Our own writes refresh the cache
+/// takes effect on the next run. Our own writes refresh the cache
 /// immediately. All access is serialized by a semaphore so the predicate and the write side
 /// never race.
 /// </remarks>
@@ -157,6 +157,13 @@ public sealed class ApprovalRuleStore
             this.Gate.Release();
         }
     }
+
+    // DESIGN TRIP-WIRE — read before changing matching/approval semantics.
+    // Matching is tool name + exact canonical args; a hit means a durable "yes" fires
+    // silently with no check that the real target still looks the way it did at grant time.
+    // If a future tool mutates/destroys a target its args don't fully describe, consider the
+    // deferred content-snapshot hash guard (mismatch -> re-prompt, don't silently act) before
+    // extending this. Deferred as overkill for now.
 
     /// <summary>
     /// Determines whether a rule matches a tool name and canonical arguments exactly.

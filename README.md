@@ -6,7 +6,7 @@ robust). It's a learning project, built in public alongside a LinkedIn series.
 
 The north star: **one durable context, standing (durable) permissions, a hard human-only floor on
 dangerous actions, and inspectable memory you can edit** — rather than a chatbot that forgets you
-when the conversation ends.
+when the conversation ends. (Note - this North Star causes many battles, [see this doc for more info](./WHY-THIS-SHAPE.md)).
 
 ## The series
 
@@ -15,7 +15,8 @@ Each post builds on the last; the code here is the companion.
 - **Based on** — Roughly follows the series from [this MS Blog Post](https://devblogs.microsoft.com/agent-framework/build-your-own-claw-and-agent-harness-with-microsoft-agent-framework/)
 - **My LinkedIn Post #1** — Setup, and making memory & permissions survive across sessions. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7515815982616068096/))_
 - **My LinkedIn Post #2** — AG-UI Client and Server Apps. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7519104949042089985/))_
-- Post #3 — _TBD (coming soon?)._
+- **My LinkedIn Post #3** — AG-UI Client-Server Approval Round-Trip. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7519104949042089985/))_
+- Post #4 — _TBD (coming soon)._
 
 
 ## Status
@@ -34,7 +35,7 @@ Early work in progress — the code reflects that.
 Requires the **.NET 10 SDK**.
 
 1. Provide configuration via `appsettings.json` + `appsettings.Development.json` (not included).
-   See `MyAssistant/Program.cs` for the exact keys it reads.
+   See `MyAssistantServer/Program.cs` for the exact keys it reads.
 2. Run both the `MyAssistantServer` and  `MuseLite.UI` apps.
 3. Ask about a stock, or try: _"Review my watchlist and recommend some stocks to add."_ A record_note
    tool call request will prompt for approval.

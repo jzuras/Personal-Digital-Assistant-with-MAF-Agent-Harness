@@ -4,21 +4,36 @@
 require human approval — especially if the agent endpoint may be reachable by clients you don't fully
 control.
 
-## Short version
+## Status — RESOLVED 2026-10-24 (binding restored)
 
-To make **interactive** human-in-the-loop tool approval work over AG-UI on the current preview of
-Microsoft Agent Framework (MAF), the server sets:
+> **This workaround has been REMOVED.** Testing confirmed that with a proper durable
+> session store in place (`MyAgentSessionStore`: atomic temp-then-rename + single-writer), re-enabling
+> the framework's approval-response binding makes interactive approval resume correctly over AG-UI on
+> **both** OpenRouter and Azure. `DisableApprovalResponseBinding` is no longer set — binding is back at
+> the framework default (**ON**), so **PR #8641's server-authoritative approval guarantee is in force
+> again.** The rest of this doc is retained as the historical record of why the workaround existed and
+> what it traded off.
+>
+> **The server is still single-user / not for untrusted exposure — but for a DIFFERENT reason.** The
+> binding is no longer the blocker; what keeps it single-user now is that per-caller **session isolation
+> is off** (`withIsolation:false`, one shared durable context), plus the concurrency and
+> memory-at-scale items in the multi-user section below. Those remain hard requirements before any
+> multi-user or internet-exposed deployment.
+
+## Short version (historical — the workaround, now removed)
+
+To make **interactive** human-in-the-loop tool approval work over AG-UI on an earlier preview of
+Microsoft Agent Framework (MAF), the server *temporarily* set:
 
 ```csharp
 new HarnessAgentOptions { DisableApprovalResponseBinding = true, /* ... */ }
 ```
 
-This **deliberately turns off a security hardening** the framework added in PR
-[#8641](https://github.com/microsoft/agent-framework/pull/8641), as an **interim workaround** (see
-*Revert condition* below — removing it will likely require this server to run a proper session store,
-and possibly an upstream fix as well; not yet determined). It is a reasonable trade-off for a
-**single-user, purpose-built, non-exposed** deployment, but **do not expose this server to untrusted or
-generic clients without re-evaluating** (see below).
+This **deliberately turned off a security hardening** the framework added in PR
+[#8641](https://github.com/microsoft/agent-framework/pull/8641), as an **interim workaround**. As of
+2026-10-24 it is **removed** — a correct session store proved to be the missing prerequisite
+(see *Revert condition*, now met). It was a reasonable trade-off for a **single-user, purpose-built,
+non-exposed** deployment while it was in place.
 
 ## Background — how this server works, and why the framework default doesn't fit it
 
@@ -118,10 +133,43 @@ So the route back to the framework default (regaining #8641's protection) is: ru
 store, re-enable the binding, and re-test the approval round-trip; if it still fails, an upstream fix is
 also needed.
 
-**Status: unverified as of this writing** — whether a correct store alone suffices, or an upstream fix is
-also required, is not yet determined. Do **not** assume an upstream fix alone (while still on an
-in-memory store) will remove the need for this flag. Until one of these is confirmed, the flag stays and
-this trade-off applies.
+**Status: RESOLVED 2026-10-24.** A correct store alone sufficed: with `MyAgentSessionStore`
+(atomic temp-then-rename + single-writer) in place, re-enabling the binding and re-running the approval
+round-trip succeeded on both OpenRouter and Azure — no upstream fix needed, #9102 did not reproduce. The
+flag has been removed and binding is back at the framework default (ON).
+
+## Durable-context model — additional requirements for multi-user / exposed deployments
+
+The single-user durable-context design deliberately skips
+several protections that are **safe to skip for a single, trusted user on a non-exposed server** but become
+**hard requirements for any multi-user or internet-exposed deployment**. Anyone building on these ideas for
+more than one user must add them:
+
+- **Per-caller session isolation.** The single-user server registers its session store with
+  `withIsolation: false`, and routes *every* request to **one** durable context — correct for one user,
+  catastrophic for many (every caller would share one conversation + memory). MAF provides the fix as a
+  composable wrapper: register with **`withIsolation: true`** so the store is wrapped by
+  `IsolationKeyScopedAgentSessionStore` (+ an `AgentIsolationKeyProvider`), and **do not** collapse all
+  thread ids to one context. Pair with real authentication so the isolation key maps to an authenticated
+  principal. (This expands the "auth + per-caller isolation" bullet above with the concrete MAF knob.)
+- **Server-authoritative approval binding.** As of 2026-10-24 this is **ON** — the #8641 binding was
+  restored once the durable store existed (see *Status* at the top and *Revert condition*). For
+  single-user that fully covers it. For multi-user/exposed, the binding guarantee holds, but you must
+  still add **authentication + per-caller isolation** (next bullet) so an approval cannot be mis-paired
+  across principals; a content/args-hash check is now optional belt-and-suspenders, not a required
+  substitute.
+- **Concurrency control on the session store.** The single-user store relies on a **single-writer guard**
+  for crash-safety only (one user ⇒ access to the one context is already serial). With multiple concurrent
+  callers hitting their own contexts — or worse, racing on a shared one — this becomes a genuine concurrency
+  problem: the store needs atomic compare-and-swap / optimistic-concurrency (e.g. ETag/conditional writes on
+  a blob backend), not just temp-then-rename.
+- **Memory-as-untrusted-input, at scale.** The assistant already treats files/web/memory as data, not
+  instructions (a prompt clause). Once memory is shared, imported, or multi-tenant, that discipline becomes
+  load-bearing against memory-poisoning (a documented 2026 attack class, incl. the SpAIware ChatGPT-memory
+  exploit): validate/scope imported memory, and never let one principal's memory influence another's agent.
+
+These are **flags, not implementations** — none is built, because the target is single-user. They are
+recorded so the trade-offs are explicit for anyone taking this design multi-user.
 
 ## References
 

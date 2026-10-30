@@ -5,6 +5,7 @@
   <Project Path="Harness_Shared_Console_OpenAI/Harness_Shared_Console_OpenAI.csproj" />
   <Project Path="MuseLite.UI/MuseLite.UI.csproj" />
   <Project Path="MyAssistant.ApprovalPolicy/MyAssistant.ApprovalPolicy.csproj" />
+  <Project Path="MyAssistant.DurableContext/MyAssistant.DurableContext.csproj" />
   <Project Path="MyAssistant/MyAssistant.csproj" />
-  <Project Path="MyAssistantServer/MyAssistantServer.csproj" />
+  <Project Path="MyAssistantServer/MyAssistantServer.csproj" Id="3ec4cb50-94f8-4acd-b804-153d58c334b2" />
 </Solution>

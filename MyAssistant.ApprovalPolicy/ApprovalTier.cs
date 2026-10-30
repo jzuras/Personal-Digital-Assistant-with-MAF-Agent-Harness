@@ -1,8 +1,8 @@
 namespace MyAssistant.ApprovalPolicy;
 
 /// <summary>
-/// The policy tier that governs how a tool/action class is approved. Borrowed from the
-/// OpenAI "Dots" policy shape and the MyAssistant design (see MyAssistant-DESIGN.html).
+/// The policy tier that governs how a tool/action class is approved. Modeled on the
+/// OpenAI "Dots" policy shape.
 /// </summary>
 public enum ApprovalTier
 {

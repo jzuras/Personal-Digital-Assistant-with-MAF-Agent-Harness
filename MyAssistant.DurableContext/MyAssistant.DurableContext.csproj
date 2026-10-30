@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!--
+      Microsoft.Agents.AI.AgentSessionStore is marked [Experimental("MAAI001")] in the 1.25.0
+      preview; deriving MyAgentSessionStore from it emits MAAI001. Suppressed project-wide because
+      this library exists specifically to build on that durable-context surface (verified via
+      reflection probe, 2026-10-24). Revisit when the API graduates out of experimental.
+    -->
+    <NoWarn>$(NoWarn);MAAI001</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    Framework-agnostic durable-context building blocks, shared by the console and the server
+    (DECISIONS.html 2026-10-24 / DP6-A). Depends only on Microsoft.Agents.AI[.Abstractions],
+    never on the console UI shell or on hosting. Versioned to 1.25.0 to match the server stack
+    (Jim, 2026-10-24); this transitively moves the console off its direct 1.23.0 reference.
+    Home for SessionRecovery now, and (later slices) MyAgentSessionStore + SessionRecoveringAgent.
+  -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.26.0" />
+  </ItemGroup>
+
+</Project>
