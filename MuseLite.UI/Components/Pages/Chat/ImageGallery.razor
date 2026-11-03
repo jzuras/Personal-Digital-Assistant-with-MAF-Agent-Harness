@@ -1,0 +1,61 @@
+@inject IJSRuntime JS
+
+<div class="image-gallery">
+    @foreach (var image in Images)
+    {
+        <figure class="image-gallery-item">
+            <image-fallback class="image-gallery-frame">
+                @if (!string.IsNullOrEmpty(image.SourceUrl))
+                {
+                    <a href="@image.SourceUrl" target="_blank" rel="noopener noreferrer" title="View source">
+                        <img src="@image.Url" alt="@AltText(image)" loading="lazy" />
+                    </a>
+                }
+                else
+                {
+                    <img src="@image.Url" alt="@AltText(image)" loading="lazy" />
+                }
+
+                <div class="image-gallery-fallback">
+                    <span class="image-gallery-fallback-icon" aria-hidden="true">&#x1F5BC;</span>
+                    <span class="image-gallery-fallback-text">Image couldn&rsquo;t be loaded</span>
+                    @if (!string.IsNullOrEmpty(image.SourceUrl))
+                    {
+                        <a class="image-gallery-fallback-link" href="@image.SourceUrl" target="_blank" rel="noopener noreferrer">View source</a>
+                    }
+                </div>
+            </image-fallback>
+
+            @if (!string.IsNullOrEmpty(image.Caption))
+            {
+                <figcaption class="image-gallery-caption">@image.Caption</figcaption>
+            }
+        </figure>
+    }
+</div>
+
+@code {
+    /// <summary>Gets or sets the images to display.</summary>
+    [Parameter, EditorRequired]
+    public required List<ImageItem> Images { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("import", "./Components/Pages/Chat/ImageGallery.razor.js");
+        }
+    }
+
+    // Prefer explicit alt text, fall back to the caption, then to a generic label so the img is never
+    // alt-less for screen readers.
+    private static string AltText(ImageItem image)
+    {
+        if (!string.IsNullOrEmpty(image.Alt))
+        {
+            return image.Alt;
+        }
+
+        return !string.IsNullOrEmpty(image.Caption) ? image.Caption : "Image";
+    }
+}

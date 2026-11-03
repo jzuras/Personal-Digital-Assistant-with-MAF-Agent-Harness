@@ -13,15 +13,23 @@
     <NoWarn>$(NoWarn);MAAI001</NoWarn>
   </PropertyGroup>
 
-  <!--
-    Framework-agnostic durable-context building blocks, shared by the console and the server
-    (DECISIONS.html 2026-10-24 / DP6-A). Depends only on Microsoft.Agents.AI[.Abstractions],
-    never on the console UI shell or on hosting. Versioned to 1.25.0 to match the server stack
-    (Jim, 2026-10-24); this transitively moves the console off its direct 1.23.0 reference.
-    Home for SessionRecovery now, and (later slices) MyAgentSessionStore + SessionRecoveringAgent.
-  -->
+  <!-- Build-time enforcement (mirrors MuseLite.UI + the nuget-audit reference); see the
+       MyAssistant.ApprovalPolicy csproj for the per-property rationale. -->
+  <PropertyGroup>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <AnalysisMode>All</AnalysisMode>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Agents.AI" Version="1.26.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.25.0.139117" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" PrivateAssets="all" />
   </ItemGroup>
 
 </Project>

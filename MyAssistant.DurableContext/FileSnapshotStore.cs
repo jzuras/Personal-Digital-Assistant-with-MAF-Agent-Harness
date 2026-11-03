@@ -22,10 +22,10 @@ public sealed class FileSnapshotStore : ISnapshotStore
     private const string PreviousFileName = "session.prev.json";
     private const string TempFileName = "session.json.tmp";
 
-    private readonly string _directoryPath;
-    private readonly string _currentPath;
-    private readonly string _previousPath;
-    private readonly string _tempPath;
+    private string DirectoryPath { get; }
+    private string CurrentPath { get; }
+    private string PreviousPath { get; }
+    private string TempPath { get; }
 
     /// <summary>
     /// Initializes the store rooted at <paramref name="directoryPath"/> (created on first write).
@@ -37,21 +37,21 @@ public sealed class FileSnapshotStore : ISnapshotStore
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(directoryPath);
 
-        this._directoryPath = directoryPath;
-        this._currentPath = Path.Combine(directoryPath, CurrentFileName);
-        this._previousPath = Path.Combine(directoryPath, PreviousFileName);
-        this._tempPath = Path.Combine(directoryPath, TempFileName);
+        this.DirectoryPath = directoryPath;
+        this.CurrentPath = Path.Combine(directoryPath, CurrentFileName);
+        this.PreviousPath = Path.Combine(directoryPath, PreviousFileName);
+        this.TempPath = Path.Combine(directoryPath, TempFileName);
     }
 
     /// <inheritdoc/>
     public async ValueTask<string?> ReadAsync(CancellationToken cancellationToken = default)
     {
-        if (!File.Exists(this._currentPath))
+        if (File.Exists(this.CurrentPath) is false)
         {
             return null;
         }
 
-        return await File.ReadAllTextAsync(this._currentPath, cancellationToken).ConfigureAwait(false);
+        return await File.ReadAllTextAsync(this.CurrentPath, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -59,30 +59,39 @@ public sealed class FileSnapshotStore : ISnapshotStore
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
-        Directory.CreateDirectory(this._directoryPath);
-        await File.WriteAllTextAsync(this._tempPath, snapshot, cancellationToken).ConfigureAwait(false);
+        Directory.CreateDirectory(this.DirectoryPath);
+        await File.WriteAllTextAsync(this.TempPath, snapshot, cancellationToken).ConfigureAwait(false);
 
-        if (File.Exists(this._currentPath))
+        if (File.Exists(this.CurrentPath) is true)
         {
             // Atomic swap: temp becomes current, the old current becomes the .prev backup.
-            File.Replace(this._tempPath, this._currentPath, this._previousPath);
+            File.Replace(this.TempPath, this.CurrentPath, this.PreviousPath);
         }
         else
         {
             // First write: no current file to replace, so an atomic rename is enough.
-            File.Move(this._tempPath, this._currentPath);
+            File.Move(this.TempPath, this.CurrentPath);
         }
     }
 
     /// <inheritdoc/>
     public ValueTask ArchiveAsync(CancellationToken cancellationToken = default)
     {
-        if (File.Exists(this._currentPath))
+        if (File.Exists(this.CurrentPath) is true)
         {
             string stamp = DateTimeOffset.UtcNow.ToString("yyyyMMdd'T'HHmmss'Z'", System.Globalization.CultureInfo.InvariantCulture);
-            string archivePath = Path.Combine(this._directoryPath, $"session.{stamp}.json");
-            File.Move(this._currentPath, archivePath);
+            string archivePath = Path.Combine(this.DirectoryPath, $"session.{stamp}.json");
+            File.Move(this.CurrentPath, archivePath);
         }
+
+        // Drop the one-generation .prev backup too. It is crash insurance for the CURRENT snapshot's
+        // write; once the current snapshot is archived there is no current write to protect, and the
+        // timestamped archive already captures the conversation's final state. Leaving .prev behind would
+        // strand a stale fragment of the just-archived conversation outside the archive (it is not touched
+        // by the next conversation's first write, which takes the no-current File.Move path). Removing it
+        // keeps a reset clean: context/ holds only the timestamped archive(s), and the next conversation
+        // rebuilds its own .prev naturally.
+        File.Delete(this.PreviousPath);
 
         return ValueTask.CompletedTask;
     }

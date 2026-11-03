@@ -61,7 +61,7 @@ public static class SessionRecovery
         for (Exception? current = exception; current is not null; current = current.InnerException)
         {
             string message = current.Message;
-            if (message.Contains("previous_response_not_found", StringComparison.OrdinalIgnoreCase))
+            if (message.Contains("previous_response_not_found", StringComparison.OrdinalIgnoreCase) is true)
             {
                 return true;
             }
@@ -86,8 +86,11 @@ public static class SessionRecovery
     /// and could not be repaired.</returns>
     public static async Task<AgentSession> RepairStaleConversationAsync(AIAgent agent, AgentSession session)
     {
+        ArgumentNullException.ThrowIfNull(agent);
+        ArgumentNullException.ThrowIfNull(session);
+
         JsonElement serialized = await agent.SerializeSessionAsync(session).ConfigureAwait(false);
-        if (!SessionRecovery.TryStripServerConversationId(serialized, out JsonElement repaired))
+        if (SessionRecovery.TryStripServerConversationId(serialized, out JsonElement repaired) is false)
         {
             return session;
         }

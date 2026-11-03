@@ -6,4 +6,21 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <!-- Build-time enforcement (mirrors MuseLite.UI + the nuget-audit reference). AnalysisMode=All turns on
+       the full CA ruleset; EnforceCodeStyleInBuild promotes .editorconfig IDE rules to build errors;
+       TreatWarningsAsErrors fails the build on any of it. GenerateDocumentationFile is required for IDE0005
+       (unused usings) at build time, and also activates CS1591 (undocumented public API). -->
+  <PropertyGroup>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <AnalysisMode>All</AnalysisMode>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.35.0.4138" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" PrivateAssets="all" />
+  </ItemGroup>
+
 </Project>

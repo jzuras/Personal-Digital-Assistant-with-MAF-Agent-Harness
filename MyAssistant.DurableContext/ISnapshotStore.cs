@@ -37,14 +37,12 @@ public interface ISnapshotStore
     /// current snapshot.
     /// </summary>
     /// <remarks>
-    /// DESIGN TRIP-WIRE — this primitive is built AHEAD of its consumer on purpose. The dedicated
-    /// memory-preserving "new context" command that would call it is deferred: its user-visible value is
-    /// coupled to client-side history replay (a fresh client painting the stored conversation), and the
-    /// AG-UI reset trigger + whether archiving resets a possibly-cached live session are unknowns best
-    /// settled alongside that work. When built, the likely shape is an HTTP reset endpoint (or a native
-    /// AG-UI thread-reset) that calls this method. It also already backs
-    /// <see cref="MyAgentSessionStore.DeleteSessionAsync"/> — the framework's session-delete contract
-    /// archives via this method — so the primitive itself is not unused.
+    /// This primitive backs the memory-preserving "new conversation" reset: the server's
+    /// <c>POST /my_assistant/reset</c> endpoint calls it through
+    /// <see cref="MyAgentSessionStore.DeleteSessionAsync"/> (the framework's session-delete contract
+    /// archives via this method) to retire the current context and start an empty one, while the
+    /// user-editable memory files are a separate store left untouched. Archiving rather than
+    /// hard-deleting keeps the prior conversation available for inspection/recovery.
     /// </remarks>
     ValueTask ArchiveAsync(CancellationToken cancellationToken = default);
 }

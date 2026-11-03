@@ -8,7 +8,7 @@ namespace MuseLite.UI;
 /// <summary>
 /// Entry point for the Agentic UI AG-UI Blazor client.
 /// </summary>
-public sealed class Program
+internal static class Program
 {
     /// <summary>
     /// Application entry point.
@@ -37,7 +37,7 @@ public sealed class Program
 
         var app = builder.Build();
 
-        if (!app.Environment.IsDevelopment())
+        if (app.Environment.IsDevelopment() is false)
         {
             app.UseExceptionHandler("/Error", createScopeForErrors: true);
             app.UseHsts();

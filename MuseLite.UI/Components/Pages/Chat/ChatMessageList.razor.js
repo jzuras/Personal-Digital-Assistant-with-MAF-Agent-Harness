@@ -4,6 +4,19 @@ window.customElements.define('chat-messages', class ChatMessages extends HTMLEle
     connectedCallback() {
         this._observer = new MutationObserver(mutations => this._scheduleAutoScroll(mutations));
         this._observer.observe(this, { childList: true, attributes: true });
+
+        // Messages already in the DOM when this element upgrades (e.g. a conversation hydrated from the
+        // server at load) were not "added" after the observer attached, so no childList mutation fires to
+        // trigger the auto-scroll. Scroll to the newest message once on connect so a restored conversation
+        // opens at the bottom instead of the top. No-op when there are no messages yet.
+        if (this.lastElementChild) {
+            requestAnimationFrame(() => {
+                const elem = this.lastElementChild;
+                if (!elem) return;
+                elem.scrollIntoView({ behavior: 'instant' });
+                ChatMessages._isFirstAutoScroll = false;
+            });
+        }
     }
 
     disconnectedCallback() {

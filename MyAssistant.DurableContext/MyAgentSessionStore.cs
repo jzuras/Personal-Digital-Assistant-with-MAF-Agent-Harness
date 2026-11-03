@@ -25,22 +25,25 @@ namespace MyAssistant.DurableContext;
 /// saves so a resume cannot interleave and double-apply a pending approval.
 /// </para>
 /// <para>
-/// Stale-pointer recovery is intentionally <em>not</em> done here: the HTTP 400
-/// <c>previous_response_not_found</c> fires when a run executes, not when the session loads, so
-/// <see cref="GetSessionAsync"/> has nothing to detect. That recovery is reactive and lives in the
-/// run path (see <see cref="SessionRecovery"/> and the forthcoming recovering-agent layer).
+/// Stale-pointer recovery is intentionally <em>not</em> done here. That failure class (HTTP 400
+/// <c>previous_response_not_found</c>) only arises with service-managed history (<c>store=true</c>),
+/// where each run chains to a prior server-held response that can expire; this server runs
+/// client-managed history (<c>store=false</c>), which carries the full transcript inside the snapshot
+/// and therefore cannot hit it. The host-agnostic <see cref="SessionRecovery"/> helper remains for a
+/// service-managed host (e.g. the console), but no recovering-agent layer is composed here — see the
+/// trip-wire comment in the server's agent-composition code for when to revisit.
 /// </para>
 /// </remarks>
 public sealed class MyAgentSessionStore : AgentSessionStore, IDisposable
 {
-    private readonly ISnapshotStore _snapshots;
+    private ISnapshotStore Snapshots { get; }
 
     /// <summary>
     /// Single-writer guard: serializes <see cref="SaveSessionAsync"/> so concurrent saves cannot
     /// interleave their read-modify-write of the one context. Backend-agnostic on purpose — it holds
     /// regardless of whether the snapshot backend is a file or a blob.
     /// </summary>
-    private readonly SemaphoreSlim _writeGate = new(1, 1);
+    private SemaphoreSlim WriteGate { get; } = new(1, 1);
 
     /// <summary>
     /// Initializes the store over a snapshot backend.
@@ -49,7 +52,7 @@ public sealed class MyAgentSessionStore : AgentSessionStore, IDisposable
     public MyAgentSessionStore(ISnapshotStore snapshots)
     {
         ArgumentNullException.ThrowIfNull(snapshots);
-        this._snapshots = snapshots;
+        this.Snapshots = snapshots;
     }
 
     /// <summary>
@@ -57,11 +60,11 @@ public sealed class MyAgentSessionStore : AgentSessionStore, IDisposable
     /// yet (the framework then creates a fresh session via <c>GetOrCreateSessionAsync</c>). The
     /// incoming <paramref name="key"/> is ignored by design — there is only one context.
     /// </summary>
-    public override async ValueTask<AgentSession?> GetSessionAsync(AIAgent agent, AgentSessionStoreKey key, CancellationToken cancellationToken)
+    public override async ValueTask<AgentSession?> GetSessionAsync(AIAgent agent, AgentSessionStoreKey key, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(agent);
 
-        string? snapshot = await this._snapshots.ReadAsync(cancellationToken).ConfigureAwait(false);
+        string? snapshot = await this.Snapshots.ReadAsync(cancellationToken).ConfigureAwait(false);
         if (snapshot is null)
         {
             return null;
@@ -75,7 +78,7 @@ public sealed class MyAgentSessionStore : AgentSessionStore, IDisposable
     /// Persists the one durable context as a snapshot, atomically and under the single-writer guard.
     /// The incoming <paramref name="key"/> is ignored by design — all requests save the one context.
     /// </summary>
-    public override async ValueTask SaveSessionAsync(AIAgent agent, AgentSessionStoreKey key, AgentSession session, CancellationToken cancellationToken)
+    public override async ValueTask SaveSessionAsync(AIAgent agent, AgentSessionStoreKey key, AgentSession session, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(agent);
         ArgumentNullException.ThrowIfNull(session);
@@ -83,14 +86,14 @@ public sealed class MyAgentSessionStore : AgentSessionStore, IDisposable
         JsonElement serialized = await agent.SerializeSessionAsync(session, cancellationToken: cancellationToken).ConfigureAwait(false);
         string snapshot = serialized.GetRawText();
 
-        await this._writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await this.WriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await this._snapshots.WriteAsync(snapshot, cancellationToken).ConfigureAwait(false);
+            await this.Snapshots.WriteAsync(snapshot, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
-            this._writeGate.Release();
+            this.WriteGate.Release();
         }
     }
 
@@ -105,7 +108,7 @@ public sealed class MyAgentSessionStore : AgentSessionStore, IDisposable
     /// <see cref="GetSessionAsync"/> returns <see langword="null"/> and a fresh context starts. This
     /// matches the project's fresh-context approach (archive for inspectability/recovery, not destruction)
     /// and reuses the same primitive the memory-preserving "new context" command
-    /// will call. The archive runs under the <see cref="_writeGate"/> single-writer guard so it cannot
+    /// will call. The archive runs under the <see cref="WriteGate"/> single-writer guard so it cannot
     /// interleave with a concurrent <see cref="SaveSessionAsync"/>.
     /// </remarks>
     /// <param name="agent">The agent that owns this session.</param>
@@ -116,20 +119,20 @@ public sealed class MyAgentSessionStore : AgentSessionStore, IDisposable
     {
         ArgumentNullException.ThrowIfNull(agent);
 
-        await this._writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await this.WriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await this._snapshots.ArchiveAsync(cancellationToken).ConfigureAwait(false);
+            await this.Snapshots.ArchiveAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {
-            this._writeGate.Release();
+            this.WriteGate.Release();
         }
     }
 
     /// <inheritdoc/>
     public void Dispose()
     {
-        this._writeGate.Dispose();
+        this.WriteGate.Dispose();
     }
 }

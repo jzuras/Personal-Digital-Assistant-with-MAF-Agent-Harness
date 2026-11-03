@@ -1,0 +1,28 @@
+# Analyzer overrides for MyAssistant.ApprovalPolicy.
+# Seeded from the nuget-audit reference baseline (C:\Users\Jim\source\LLC\nuget-audit\.editorconfig),
+# the canonical triaged suppression set. root = false so it inherits Jim's global
+# C:\Users\Jim\source\.editorconfig on dev machines; build-critical rules are duplicated here so the
+# public-repo build is self-contained.
+#
+# NOTE (triage): this is a LIBRARY, so CA2007 (ConfigureAwait) is intentionally NOT suppressed below —
+# the correct fix for a library is ConfigureAwait(false) on awaits, not a suppression. Revisit the rest
+# against the actual build output.
+root = false
+
+[*.cs]
+# Remove unnecessary using directives (needs GenerateDocumentationFile=true, set in the .csproj).
+dotnet_diagnostic.IDE0005.severity = error
+
+# Duplicate-using detection — belt-and-suspenders alongside IDE0005.
+dotnet_diagnostic.CS8933.severity = error
+
+# S1125: "Remove unnecessary boolean literal" contradicts the `is true`/`is false` pattern style the
+# global config enforces; the cases it would legitimately catch are already build errors via IDE0019.
+dotnet_diagnostic.S1125.severity = none
+
+# Project-level glob: obj/ is directly under this .editorconfig, so NO leading **/ (that root-level form
+# silently fails to match here). Mark SDK-generated files (AssemblyInfo, GlobalUsings, etc.) as generated
+# so analyzers skip them, and silence the CS8933 their `using System;` trips against the implicit global using.
+[obj/**/*.cs]
+generated_code = true
+dotnet_diagnostic.CS8933.severity = none

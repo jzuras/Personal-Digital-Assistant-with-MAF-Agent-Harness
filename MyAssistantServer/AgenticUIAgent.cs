@@ -5,15 +5,14 @@ using Microsoft.Extensions.AI;
 
 namespace MyAssistantServer.AgenticUI;
 
-//[SuppressMessage("Performance", "CA1812:Avoid uninstantiated internal classes", Justification = "Instantiated by ChatClientAgentFactory.CreateAgenticUI")]
 internal sealed class AgenticUIAgent : DelegatingAIAgent
 {
-    private readonly JsonSerializerOptions _jsonSerializerOptions;
+    private JsonSerializerOptions SerializerOptions { get; }
 
     public AgenticUIAgent(AIAgent innerAgent, JsonSerializerOptions jsonSerializerOptions)
         : base(innerAgent)
     {
-        this._jsonSerializerOptions = jsonSerializerOptions;
+        this.SerializerOptions = jsonSerializerOptions;
     }
 
     protected override Task<AgentResponse> RunCoreAsync(IEnumerable<ChatMessage> messages, AgentSession? session = null, AgentRunOptions? options = null, CancellationToken cancellationToken = default)
@@ -44,22 +43,20 @@ internal sealed class AgenticUIAgent : DelegatingAIAgent
                         break;
                     }
                 }
-                else if (content is FunctionResultContent resultContent)
+                else if (content is FunctionResultContent resultContent
+                    && trackedFunctionCalls.TryGetValue(resultContent.CallId, out var matchedCall))
                 {
-                    // Check if this result matches a tracked function call
-                    if (trackedFunctionCalls.TryGetValue(resultContent.CallId, out var matchedCall))
-                    {
-                        var bytes = JsonSerializer.SerializeToUtf8Bytes((JsonElement)resultContent.Result!, this._jsonSerializerOptions);
+                    // This result matches a tracked create_plan / update_plan_step call.
+                    var bytes = JsonSerializer.SerializeToUtf8Bytes((JsonElement)resultContent.Result!, this.SerializerOptions);
 
-                        // Determine event type based on the function name
-                        if (matchedCall.Name == "create_plan")
-                        {
-                            stateEventsToEmit.Add(new DataContent(bytes, "application/json"));
-                        }
-                        else if (matchedCall.Name == "update_plan_step")
-                        {
-                            stateEventsToEmit.Add(new DataContent(bytes, "application/json-patch+json"));
-                        }
+                    // Determine event type based on the function name
+                    if (matchedCall.Name == "create_plan")
+                    {
+                        stateEventsToEmit.Add(new DataContent(bytes, "application/json"));
+                    }
+                    else if (matchedCall.Name == "update_plan_step")
+                    {
+                        stateEventsToEmit.Add(new DataContent(bytes, "application/json-patch+json"));
                     }
                 }
             }

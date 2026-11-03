@@ -13,6 +13,7 @@ using OpenAI.Responses;
 using System.ClientModel;
 using System.ClientModel.Primitives;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 
 namespace MyAssistantServer;
@@ -20,7 +21,7 @@ namespace MyAssistantServer;
 #pragma warning disable OPENAI001 // Suppress experimental API warnings for Responses API usage.
 #pragma warning disable MAAI001 // Suppress experimental API warnings for FileAccessStore.
 
-public class Program
+internal static class Program
 {
     // Context-window compaction bounds. A single durable context grows unbounded, so compaction is
     // enabled; these two values parameterize it. They are wired as the history provider's reducer (a
@@ -52,14 +53,17 @@ public class Program
         jsonOptions.TypeInfoResolverChain.Add(AGUIDojoServerSerializerContext.Default);
 
         jsonOptions.TypeInfoResolverChain.Add(new DefaultJsonTypeInfoResolver());
-        var agenticUiAgent = CreateAgenticUI(builder, jsonOptions);
+        var server = CreateAgenticUI(builder, jsonOptions);
 
 
         builder.Services.AddHttpClient().AddLogging();
 
+        string[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
         builder.Services.AddCors(options =>
             options.AddDefaultPolicy(policy =>
-                policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
+                policy.WithOrigins(allowedOrigins)
+                    .AllowAnyHeader()
+                    .AllowAnyMethod()));
 
         builder.Services.AddAGUIServer();
 
@@ -67,25 +71,93 @@ public class Program
 
         app.UseCors();
 
-        app.MapAGUIServer("/my_assistant", agenticUiAgent);
+        app.MapAGUIServer("/my_assistant", server.Agent);
+
+        // Server-authoritative history hydration. The one durable context lives on the server; a freshly
+        // opened client GETs this on load to paint the whole conversation instead of starting blank. Reads
+        // the stored transcript straight from the history provider (GetMessages), projected to a minimal
+        // {role, text} shape. The session-store key is ignored by MyAgentSessionStore (one fixed context),
+        // so any non-empty id works.
+        app.MapGet("/my_assistant/history", async (CancellationToken cancellationToken) =>
+        {
+            AgentSession? session = await server.SessionStore
+                .GetSessionAsync(server.BaseAgent, new AgentSessionStoreKey("hydration"), cancellationToken)
+                .ConfigureAwait(false);
+            if (session is null)
+            {
+                return Results.Json(Array.Empty<HistoryMessage>(), jsonOptions);
+            }
+
+            List<ChatMessage> stored = server.HistoryProvider.GetMessages(session);
+            return Results.Json(ProjectToHistory(stored), jsonOptions);
+        });
+
+        // Memory-preserving "new conversation" reset. Archives the one durable context (timestamped, under
+        // context/) and leaves no current snapshot, so the next chat turn starts an empty conversation. This
+        // resets ONLY the running transcript: the user-editable working/ store (identity/preferences/memories/
+        // watchlist + standing approval rules) is a SEPARATE directory and is left untouched. The AG-UI host
+        // loads the session from the store on every request (no in-process session cache), so the archive takes
+        // effect on the very next turn with no restart. DeleteSessionAsync archives under the store's
+        // single-writer guard; the session-store key is ignored by MyAgentSessionStore (one fixed context), so
+        // any non-empty id works.
+        app.MapPost("/my_assistant/reset", async (CancellationToken cancellationToken) =>
+        {
+            await server.SessionStore
+                .DeleteSessionAsync(server.BaseAgent, new AgentSessionStoreKey("reset"), cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Ok();
+        });
+
+        // Durable "remember this approval permanently" write path for the client's approval UI. The console
+        // writes grants in-process; the client is a separate process, so it POSTs here after the user
+        // confirms a standing grant. This endpoint ONLY persists the rule — approving the current call is a
+        // separate action the client still does over the AG-UI resume. The SAME ApprovalRuleStore backs the
+        // auto-approval predicate (see AutoApprovalRules above), so a grant written here is honored silently
+        // on the next matching call. Two safeguards: (1) the human-only floor is re-checked server-side so a
+        // raw POST can never persist a grant for a tool that must always be a fresh human decision; (2) the
+        // SERVER canonicalizes the arguments with the same ArgCanonicalizer the predicate uses, so the stored
+        // rule is guaranteed to match (client-side canonicalization could drift and silently never match).
+        app.MapPost("/my_assistant/approvals", async (PersistApprovalRequest request) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.ToolName) is true)
+            {
+                return Results.BadRequest();
+            }
+
+            if (server.HumanOnlyPolicy.IsPersistable(request.ToolName) is false)
+            {
+                return Results.Json(new PersistApprovalResult(false, "human-only"), jsonOptions);
+            }
+
+            // Arguments arrive as the raw JSON object the client received in the approval request. Deserialize
+            // to the same Dictionary<string, object?> shape the predicate canonicalizes (values become
+            // JsonElement, exactly as FunctionCallContent.Arguments does), so the canonical forms match. A
+            // tool with no arguments canonicalizes to "{}".
+            Dictionary<string, object?>? arguments = request.Arguments.ValueKind == JsonValueKind.Object
+                ? request.Arguments.Deserialize<Dictionary<string, object?>>(jsonOptions)
+                : null;
+            string canonicalArgs = ArgCanonicalizer.Canonicalize(arguments);
+            await server.ApprovalStore.AddRuleAsync(request.ToolName, canonicalArgs).ConfigureAwait(false);
+            return Results.Json(new PersistApprovalResult(true, null), jsonOptions);
+        });
 
         await app.RunAsync();
-
-        app.Run();
     }
 
     // AgenticUI agent from dojo:
     // https://github.com/ag-ui-protocol/ag-ui/tree/bc0a2c1d25ed184ee05775e66e8eda50f679ee25/integrations/microsoft-agent-framework/dotnet/examples/AGUIDojoServer
-    private static AgenticUIAgent CreateAgenticUI(WebApplicationBuilder builder, JsonSerializerOptions jsonOptions)
+    private static AssistantServer CreateAgenticUI(WebApplicationBuilder builder, JsonSerializerOptions jsonOptions)
     {
         // Provider selector — single source of truth. Flip this to switch models.
         // ⚠ The durable session snapshot in context/ is PROVIDER-SPECIFIC: an OpenRouter-written
         // snapshot loaded into Azure (or vice-versa) causes an Azure HTTP 400 invalid_payload. Clear
         // context/*.json when switching providers.
         bool useOpenRouter = false;
-        IChatClient chatClient = useOpenRouter
+#pragma warning disable CA1508 // Flag above triggers dead-code warning
+        IChatClient chatClient = (useOpenRouter is true)
             ? CreateOpenRouterChatClient(builder)
             : CreateAzureOpenAIChatClient(builder);
+#pragma warning restore CA1508
 
         string name = "AgenticUIAgent";
         // <instructions>
@@ -137,6 +209,37 @@ public class Program
     The user owns these files and may edit or delete anything to correct or forget something: the
     current file contents are always the source of truth. Do not re-add something they have removed.
 
+    ### Showing a plan for multi-step tasks
+
+    When the user asks you to carry out a task that takes several steps, drive a live checklist with
+    the plan tools. While the plan is in progress, express yourself through the tools, not prose.
+    IMPORTANT:
+    - Use the `create_plan` tool to set the initial state of the steps
+    - Use the `update_plan_step` tool to update the status of each step
+    - Do NOT repeat the plan or summarise it in a message
+    - Do NOT confirm the creation or updates in a message
+    - Do NOT ask the user for additional information or next steps
+    - Do NOT leave a plan hanging, always complete the plan via `update_plan_step` if one is ongoing.
+    - Continue calling update_plan_step until all steps are marked as completed.
+    - AFTER every step is completed, send ONE short closing sentence so it is clear the task is
+      finished (e.g. a brief result or "All done."). That closing line is the only prose you write
+      for a plan — do not narrate the steps along the way.
+
+    Only one plan can be active at a time, so do not call the `create_plan` tool
+    again until all the steps in current plan are completed.
+
+    Use the plan tools only for genuinely multi-step tasks; for ordinary questions and single actions,
+    answer normally and do not create a plan.
+
+    ### Showing pictures
+
+    When the user asks to see a picture or photo of something, use web search to find a relevant image,
+    then call the `show_images` tool to display it. For each image give a DIRECT image URL (one ending in
+    .jpg, .png, .webp, or .gif — not a web page), a short caption, and the sourceUrl of the page it came
+    from. Prefer one or two good images over many. Still answer in text as usual — the images accompany
+    your answer, they do not replace it. If you cannot find a real image URL, tell the user so rather than
+    guessing or inventing a URL.
+
     ### Important
 
     You provide information and analysis only — you are not a licensed financial advisor and you
@@ -152,40 +255,9 @@ public class Program
     """;
         // </instructions>
 
-        // Original DOJO AgenticUI instructions - plan is to add back in as demo at later date:
-        //string description = "An agent that generates agentic user interfaces using OpenAI";
-        //string instructions = """
-        //        When planning use tools only, without any other messages.
-        //        IMPORTANT:
-        //        - Use the `create_plan` tool to set the initial state of the steps
-        //        - Use the `update_plan_step` tool to update the status of each step
-        //        - Do NOT repeat the plan or summarise it in a message
-        //        - Do NOT confirm the creation or updates in a message
-        //        - Do NOT ask the user for additional information or next steps
-        //        - Do NOT leave a plan hanging, always complete the plan via `update_plan_step` if one is ongoing.
-        //        - Continue calling update_plan_step until all steps are marked as completed.
-
-        //        Only one plan can be active at a time, so do not call the `create_plan` tool
-        //        again until all the steps in current plan are completed.
-        //        """;
-
-
         ChatClientAgentOptions options = new ChatClientAgentOptions();
         options.ChatOptions = new ChatOptions
         {
-            // Original DOJO AgenticUI tools - plan is to add back in as demo at later date:
-            //Tools = [
-            //        AIFunctionFactory.Create(
-            //            AgenticPlanningTools.CreatePlan,
-            //            name: "create_plan",
-            //            description: "Create a plan with multiple steps.", jsonOptions),
-            //            //AGUIDojoServerSerializerContext.Default.Options),
-            //        AIFunctionFactory.Create(
-            //            AgenticPlanningTools.UpdatePlanStepAsync,
-            //            name: "update_plan_step",
-            //            description: "Update a step in the plan with new description or status.", jsonOptions),
-            //            //AGUIDojoServerSerializerContext.Default.Options)
-            //    ],
             AllowMultipleToolCalls = false,
             Instructions = instructions
         };
@@ -201,12 +273,47 @@ public class Program
         // Durable approval policy, mirroring the console. A call with no stored rule prompts; a call whose
         // exact canonicalized args match a rule in working/approval-rules.json is auto-approved silently
         // (and audited). This is the read side — the same ApprovalRuleStore the console writes to, so a
-        // grant made console-side is honored here. The client-side "remember permanently" write path over
-        // AG-UI is a separate, deferred design.
+        // grant made console-side is honored here. The client's "remember permanently" choice writes to this
+        // same store via the POST /my_assistant/approvals endpoint (see MapPost in Main).
         string workingDir = Path.Combine(AppContext.BaseDirectory, "working");
         var approvalAuditLog = new FileApprovalAuditLog(Path.Combine(workingDir, "approval-audit.log"));
         var approvalStore = new ApprovalRuleStore(Path.Combine(workingDir, "approval-rules.json"), approvalAuditLog);
         var humanOnlyPolicy = new HumanOnlyPolicy();
+
+        // Chat-history provider hoisted to a local so the /history hydration endpoint can read the stored
+        // transcript via GetMessages(session) (see the MapGet in Main). The compaction wiring is documented
+        // at the use site in HarnessAgentOptions below.
+        var historyProvider = new InMemoryChatHistoryProvider(new InMemoryChatHistoryProviderOptions
+        {
+            ChatReducer = new ContextWindowCompactionStrategy(
+                DefaultMaxContextWindowTokens,
+                DefaultMaxOutputTokens,
+                ContextWindowCompactionStrategy.DefaultToolEvictionThreshold,
+                ContextWindowCompactionStrategy.DefaultTruncationThreshold).AsChatReducer(),
+            ReducerTriggerEvent = InMemoryChatHistoryProviderOptions.ChatReducerTriggerEvent.BeforeMessagesRetrieval,
+        });
+
+        // Small logger factory for the opt-in debug diagnostics (request dump + stream-error surfacing),
+        // bound to the app's Logging configuration so they obey the standard log levels: silent at the
+        // default Information level, enabled by setting "MyAssistantServer.AgenticUI" to Debug. Built here
+        // because the chat-client wrappers are composed before the app (and its ILoggerFactory) exists. App
+        // lifetime — intentionally not disposed.
+        ILoggerFactory diagnosticLoggerFactory = LoggerFactory.Create(logging =>
+        {
+            logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
+            logging.AddConsole();
+        });
+
+        // Debug-level request dump: logs the final outbound history just before it reaches the model. Wrapped
+        // INSIDE the stripper below, so when enabled it shows the post-strip request. Off unless the Logging
+        // category is raised to Debug.
+        chatClient = new RequestDumpChatClient(chatClient, diagnosticLoggerFactory.CreateLogger<RequestDumpChatClient>());
+
+        // Strip hosted-tool call/result items from the replayed history. Under stored-output-disabled
+        // (client-managed) history the whole transcript is resent as input each turn, and hosted-tool items
+        // (web search, etc.) are not valid input items — replaying them fails the Responses API with HTTP 400
+        // invalid_payload. This is the permanent fix. See HostedToolHistoryStrippingChatClient.
+        chatClient = new HostedToolHistoryStrippingChatClient(chatClient);
 
         // <create_agent>
         // Turn the chat client into a HarnessAgent. AsHarnessAgent pre-configures function invocation,
@@ -249,15 +356,7 @@ public class Program
             // ChatOptions.MaxOutputTokens (the 4_000 below only bounds the compaction budget, not model
             // output). We therefore set the model-output cap explicitly on ChatOptions below
             // (MaxOutputTokens = DefaultMaxOutputTokens), restoring the prior response-length limit.
-            ChatHistoryProvider = new InMemoryChatHistoryProvider(new InMemoryChatHistoryProviderOptions
-            {
-                ChatReducer = new ContextWindowCompactionStrategy(
-                    DefaultMaxContextWindowTokens,
-                    DefaultMaxOutputTokens,
-                    ContextWindowCompactionStrategy.DefaultToolEvictionThreshold,
-                    ContextWindowCompactionStrategy.DefaultTruncationThreshold).AsChatReducer(),
-                ReducerTriggerEvent = InMemoryChatHistoryProviderOptions.ChatReducerTriggerEvent.BeforeMessagesRetrieval,
-            }),
+            ChatHistoryProvider = historyProvider,
 
             // Durable approval policy, mirroring the console. Read-only file tools flow freely; a call
             // whose exact canonical args match a stored rule is auto-approved silently (audited); any other
@@ -272,7 +371,7 @@ public class Program
                     async ctx =>
                     {
                         FunctionCallContent call = ctx.FunctionCallContent;
-                        if (!humanOnlyPolicy.IsPersistable(call.Name))
+                        if (humanOnlyPolicy.IsPersistable(call.Name) is false)
                         {
                             return false;
                         }
@@ -308,10 +407,38 @@ public class Program
                 // ApprovalRequiredAIFunction (the same gating marker the console uses) to demonstrate the
                 // interactive-approval + durable auto-approval flow. Replace with real gated actions as
                 // they are added.
-                Tools = [new ApprovalRequiredAIFunction(AIFunctionFactory.Create(
-                    (string note) => $"Recorded: {note}",
-                    "record_note",
-                    "Records a short note for the user. Requires approval."))],
+                //
+                // create_plan / update_plan_step are the agentic-UI demo tools: the model calls them to
+                // build and advance the client's live "Task Progress" checklist. They are UN-GATED — they
+                // have no side effects and only drive display state, so interrupting them for approval would
+                // break the demo. The data they return IS the UI state (create_plan = a full snapshot,
+                // update_plan_step = an incremental JSON Patch delta); AgenticUIAgent surfaces it to the
+                // client. jsonOptions carries the serializer context that knows Plan/Step/StepStatus/
+                // JsonPatchOperation.
+                Tools =
+                [
+                    new ApprovalRequiredAIFunction(AIFunctionFactory.Create(
+                        (string note) => $"Recorded: {note}",
+                        "record_note",
+                        "Records a short note for the user. Requires approval.")),
+                    AIFunctionFactory.Create(
+                        AgenticPlanningTools.CreatePlan,
+                        name: "create_plan",
+                        description: "Create a plan with multiple steps.", jsonOptions),
+                    AIFunctionFactory.Create(
+                        AgenticPlanningTools.UpdatePlanStepAsync,
+                        name: "update_plan_step",
+                        description: "Update a step in the plan with new description or status.", jsonOptions),
+
+                    // show_images (demo): un-gated. The model calls it with image URLs it found (e.g. via
+                    // web search) and the client renders a gallery attached to the answer. The returned
+                    // object IS the UI content (an "images" array), which the client detects by shape.
+                    AIFunctionFactory.Create(
+                        ImageTools.ShowImages,
+                        name: "show_images",
+                        description: "Show one or more images to the user inline, alongside your text answer.",
+                        jsonOptions),
+                ],
 
                 Reasoning = new() { Effort = ReasoningEffort.Medium },
             },
@@ -347,8 +474,17 @@ public class Program
         // SessionRecoveringAgent (DelegatingAIAgent overriding RunCoreStreamingAsync, advance-first,
         // reusing MyAssistant.DurableContext.SessionRecovery) and compose it here, then verify by
         // manufacturing a stale pointer.
-        return new AgenticUIAgent(baseAgent, jsonOptions);
-
+        return new AssistantServer(
+            // baseAgent wrapped in StreamErrorLoggingAgent, a debug-level diagnostic that surfaces the real
+            // exception behind the AG-UI host's generic streaming error (enable via the Logging config).
+            new AgenticUIAgent(
+                new StreamErrorLoggingAgent(baseAgent, diagnosticLoggerFactory.CreateLogger<StreamErrorLoggingAgent>()),
+                jsonOptions),
+            baseAgent,
+            historyProvider,
+            durableSessionStore,
+            approvalStore,
+            humanOnlyPolicy);
     }
 
     private static IChatClient CreateOpenRouterChatClient(WebApplicationBuilder builder)
@@ -405,4 +541,152 @@ public class Program
 
         return chatClient;
     }
+
+    // Projects the stored transcript to the minimal shape the chat UI paints: user and assistant text
+    // turns only. Tool-call / tool-result / system messages drive execution, not the transcript view, so
+    // they are skipped; an assistant turn carrying only a tool call (no text) is skipped too. The
+    // denied-approval marker shown on live turns is client-only display state that is never persisted, so
+    // it is intentionally not reconstructed here.
+    private static HistoryMessage[] ProjectToHistory(List<ChatMessage> messages)
+    {
+        var history = new List<HistoryMessage>(messages.Count);
+
+        // The show_images tool's result is stored in a tool-role message that sits between the assistant turn
+        // that called the tool and the assistant's text answer. Buffer any images seen since the last emitted
+        // turn and hang them on the next assistant text message, so a reopened client renders the gallery
+        // beneath the same answer it appeared under live. Mirrors the streaming path's attach logic.
+        var pendingImages = new List<ImageItem>();
+
+        foreach (ChatMessage message in messages)
+        {
+            if (message.Role == ChatRole.Tool)
+            {
+                CollectImagesFromToolResults(message, pendingImages);
+                continue;
+            }
+
+            string role;
+            if (message.Role == ChatRole.User)
+            {
+                role = "user";
+            }
+            else if (message.Role == ChatRole.Assistant)
+            {
+                role = "assistant";
+            }
+            else
+            {
+                continue;
+            }
+
+            string text = message.Text;
+            if (string.IsNullOrWhiteSpace(text) is true)
+            {
+                continue;
+            }
+
+            ImageResult? images = null;
+            if (message.Role == ChatRole.Assistant && pendingImages.Count > 0)
+            {
+                images = new ImageResult { Images = [.. pendingImages] };
+                pendingImages.Clear();
+            }
+
+            history.Add(new HistoryMessage(role, text, images));
+        }
+
+        return [.. history];
+    }
+
+    // Pulls any show_images results out of a stored tool-role message and appends their images to the sink,
+    // to be attached to the following assistant answer by ProjectToHistory. An image result is a JSON object
+    // with an "images" array — distinct from the plan snapshot ("steps") and the plan delta (a bare array)
+    // and from plain-string tool results — so it is recognized the same way the streaming path recognizes it.
+    private static void CollectImagesFromToolResults(ChatMessage message, List<ImageItem> sink)
+    {
+        foreach (AIContent content in message.Contents)
+        {
+            if (content is not FunctionResultContent functionResult)
+            {
+                continue;
+            }
+
+            string? json = functionResult.Result switch
+            {
+                string s => s,
+                JsonElement je => je.GetRawText(),
+                _ => functionResult.Result?.ToString()
+            };
+
+            if (string.IsNullOrWhiteSpace(json) is true)
+            {
+                continue;
+            }
+
+            // Only an image result is object-shaped; skip arrays/strings without parsing.
+            ReadOnlySpan<char> jsonSpan = json.AsSpan().TrimStart();
+            if (jsonSpan.IsEmpty || jsonSpan[0] != '{')
+            {
+                continue;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.ValueKind != JsonValueKind.Object
+                    || doc.RootElement.TryGetProperty("images", out _) is false)
+                {
+                    continue;
+                }
+
+                ImageResult? result = JsonSerializer.Deserialize(
+                    json,
+                    AGUIDojoServerSerializerContext.Default.ImageResult);
+                if (result is { Images.Count: > 0 })
+                {
+                    sink.AddRange(result.Images);
+                }
+            }
+            catch (JsonException)
+            {
+                // Not a well-formed image result — skip it; hydration still returns the assistant's text.
+            }
+        }
+    }
+
+    // Minimal display projection of one stored message, returned by the /history hydration endpoint. The
+    // chat UI renders user and assistant text turns, plus any inline image gallery the show_images tool
+    // produced for an assistant answer (reconstructed from the stored tool result so a reopened client shows
+    // the pictures, not just the text). Serialized as camelCase ({role, text, images?}); images is omitted
+    // when the turn has none.
+    private sealed record HistoryMessage(
+        string Role,
+        string Text,
+        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ImageResult? Images = null);
+
+    // Bundles what Main needs after CreateAgenticUI builds the agent: the AG-UI agent to map, plus the
+    // pieces the /history hydration endpoint reads from — the base agent (to load the session), the
+    // history provider (to read its messages), and the durable session store.
+    private sealed record AssistantServer(
+        AgenticUIAgent Agent,
+        AIAgent BaseAgent,
+        InMemoryChatHistoryProvider HistoryProvider,
+        MyAgentSessionStore SessionStore,
+        ApprovalRuleStore ApprovalStore,
+        HumanOnlyPolicy HumanOnlyPolicy);
+
+    // Body of the "remember this grant permanently" request from the client's approval UI. Carries the
+    // gated tool's name and the exact arguments it was called with; the server canonicalizes the arguments
+    // (so the written rule matches the auto-approval predicate, which canonicalizes the same way) and writes
+    // a durable rule. Serialized camelCase ({toolName, arguments}).
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Performance",
+        "CA1812:Avoid uninstantiated internal classes",
+        Justification = "Instantiated by ASP.NET Core minimal-API JSON body binding.")]
+    private sealed record PersistApprovalRequest(string ToolName, JsonElement Arguments);
+
+    // Result of a persist-approval request. Persisted is false (with a reason) when the grant could not be
+    // stored — today only because the tool is on the human-only floor, which can never receive a durable
+    // grant. The client treats a non-persisted result as "approve once" and tells the user it was not saved.
+    private sealed record PersistApprovalResult(bool Persisted, string? Reason);
 }

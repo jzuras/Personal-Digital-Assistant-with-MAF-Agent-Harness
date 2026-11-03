@@ -1,0 +1,45 @@
+# Analyzer overrides for MyAssistantServer.
+# Seeded from the nuget-audit reference baseline (the canonical triaged suppression set). root = false so
+# it inherits Jim's global C:\Users\Jim\source\.editorconfig on dev machines; build-critical rules are
+# duplicated here so the public-repo build is self-contained.
+#
+# This is an APP (ASP.NET Core host), so the app-oriented suppressions apply: CA2007 (no sync context →
+# ConfigureAwait is noise) and CS1591 (public XML docs not required for an app entry point).
+root = false
+
+[*.cs]
+# Remove unnecessary using directives (needs GenerateDocumentationFile=true, set in the .csproj).
+dotnet_diagnostic.IDE0005.severity = error
+
+# Duplicate-using detection — belt-and-suspenders alongside IDE0005.
+dotnet_diagnostic.CS8933.severity = error
+
+# S1125: "Remove unnecessary boolean literal" contradicts the `is true`/`is false` pattern style the
+# global config enforces; the cases it would legitimately catch are already build errors via IDE0019.
+dotnet_diagnostic.S1125.severity = none
+
+# CA2007: ConfigureAwait(false) not required — ASP.NET Core has no synchronization context to capture.
+dotnet_diagnostic.CA2007.severity = none
+
+# CS1591: public members of an application host do not require XML doc comments (GenerateDocumentationFile
+# is on only to activate IDE0005 at build time).
+dotnet_diagnostic.CS1591.severity = none
+
+# CA2000: the chat clients and the durable session store are app-lifetime singletons owned by the host /
+# agent (the composition root) and live until process exit; disposing them "before out of scope" is wrong.
+dotnet_diagnostic.CA2000.severity = none
+
+# S1135: TODO comments are an accepted deferred-work marker here (e.g. the model context-window values);
+# their presence is not a build failure.
+dotnet_diagnostic.S1135.severity = none
+
+# S1075: the provider API base URL (OpenRouter) is a fixed, canonical third-party endpoint, not an
+# environment-specific address to externalize.
+dotnet_diagnostic.S1075.severity = none
+
+# Project-level glob: obj/ is directly under this .editorconfig, so NO leading **/. Mark SDK-generated
+# files (AssemblyInfo, GlobalUsings, etc.) as generated so analyzers skip them, and silence the CS8933
+# their `using System;` trips against the implicit global using.
+[obj/**/*.cs]
+generated_code = true
+dotnet_diagnostic.CS8933.severity = none

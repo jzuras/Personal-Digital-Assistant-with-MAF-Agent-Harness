@@ -96,7 +96,7 @@ public sealed class ApprovalRuleStore
         try
         {
             List<ApprovalRule> rules = await this.EnsureLoadedAsync().ConfigureAwait(false);
-            if (rules.Any(rule => ApprovalRuleStore.Matches(rule, toolName, canonicalArguments)))
+            if (rules.Any(rule => ApprovalRuleStore.Matches(rule, toolName, canonicalArguments)) is true)
             {
                 return;
             }
@@ -189,16 +189,19 @@ public sealed class ApprovalRuleStore
             return this.Cache;
         }
 
-        if (!File.Exists(this.FilePath))
+        if (File.Exists(this.FilePath) is false)
         {
             this.Cache = [];
             return this.Cache;
         }
 
-        await using FileStream stream = File.OpenRead(this.FilePath);
-        List<ApprovalRule>? loaded = await JsonSerializer.DeserializeAsync<List<ApprovalRule>>(stream).ConfigureAwait(false);
-        this.Cache = loaded ?? [];
-        return this.Cache;
+        FileStream stream = File.OpenRead(this.FilePath);
+        await using (stream.ConfigureAwait(false))
+        {
+            List<ApprovalRule>? loaded = await JsonSerializer.DeserializeAsync<List<ApprovalRule>>(stream).ConfigureAwait(false);
+            this.Cache = loaded ?? [];
+            return this.Cache;
+        }
     }
 
     /// <summary>
@@ -209,12 +212,13 @@ public sealed class ApprovalRuleStore
     private async Task SaveAsync(List<ApprovalRule> rules)
     {
         string? directory = Path.GetDirectoryName(this.FilePath);
-        if (!string.IsNullOrEmpty(directory))
+        if (string.IsNullOrEmpty(directory) is false)
         {
             Directory.CreateDirectory(directory);
         }
 
-        await using (FileStream stream = File.Create(this.FilePath))
+        FileStream stream = File.Create(this.FilePath);
+        await using (stream.ConfigureAwait(false))
         {
             await JsonSerializer.SerializeAsync(stream, rules, ApprovalRuleStore.WriteOptions).ConfigureAwait(false);
         }

@@ -56,6 +56,173 @@
     font-style: italic;
 }
 
+.header-actions {
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.new-conversation {
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #4152d5;
+    background: rgba(255, 255, 255, 0.8);
+    border: 1.5px solid rgba(140, 165, 220, 0.5);
+    border-radius: 9999px;
+    padding: 0.35rem 0.9rem;
+    transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+    .new-conversation:hover {
+        background: rgba(255, 255, 255, 0.95);
+        border-color: #4152d5;
+        box-shadow: 0 2px 8px rgba(65, 82, 213, 0.12);
+    }
+
+/* Two-step confirmation before starting a new conversation (archives the current transcript) */
+.reset-panel {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin: 0.75rem 1.5rem 0;
+    padding: 0.85rem 1.1rem;
+    border: 1.5px solid rgba(140, 165, 220, 0.7);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 4px 16px rgba(50, 80, 160, 0.12);
+}
+
+.reset-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+    flex: 1 1 18rem;
+}
+
+.reset-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #1a1f3a;
+}
+
+.reset-text {
+    font-size: 0.875rem;
+    color: #4a537d;
+    line-height: 1.5;
+}
+
+.reset-actions {
+    display: flex;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+    .reset-actions button {
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 0.875rem;
+        font-weight: 600;
+        border-radius: 8px;
+        padding: 0.4rem 1.1rem;
+        border: none;
+        transition: filter 0.15s ease, background-color 0.15s ease;
+    }
+
+        .reset-actions button:hover {
+            filter: brightness(1.05);
+        }
+
+.reset-confirm {
+    background: #4152d5;
+    color: #fff;
+}
+
+.reset-cancel {
+    background: rgba(140, 165, 220, 0.18);
+    color: #3a4576;
+}
+
+/* Connection status banner — shown while the agent server is unreachable (e.g. not started yet in dev) */
+.connection-panel {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin: 0.75rem 1.5rem 0;
+    padding: 0.85rem 1.1rem;
+    border: 1.5px solid rgba(140, 165, 220, 0.7);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 4px 16px rgba(50, 80, 160, 0.12);
+}
+
+/* Offline is a warning state; connecting keeps the neutral blue */
+.connection-offline {
+    border-color: #e0b000;
+    background: #fff8e1;
+    box-shadow: 0 4px 16px rgba(160, 130, 0, 0.18);
+}
+
+.connection-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    min-width: 0;
+    flex: 1 1 18rem;
+}
+
+.connection-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #1a1f3a;
+}
+
+.connection-text {
+    font-size: 0.875rem;
+    color: #4a537d;
+    line-height: 1.5;
+}
+
+.connection-actions {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.connection-retry {
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border: none;
+    border-radius: 8px;
+    padding: 0.4rem 1.1rem;
+    color: #fff;
+    background: #4152d5;
+    transition: filter 0.15s ease;
+}
+
+    .connection-retry:hover {
+        filter: brightness(1.05);
+    }
+
+/* Disabled header/new-conversation button while offline */
+.new-conversation:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+    .new-conversation:disabled:hover {
+        background: rgba(255, 255, 255, 0.8);
+        border-color: rgba(140, 165, 220, 0.5);
+        box-shadow: none;
+    }
+
 .chat-container {
     position: sticky;
     bottom: 0;
@@ -161,6 +328,50 @@
     background: #b23a3a;
 }
 
+.approval-always {
+    background: #4152d5;
+}
+
+/* "No, just once" — the secondary choice on the remember-confirm card. An outlined button (not a
+   low-opacity fill, which washed out against the amber panel and read as disabled) so it is clearly
+   clickable while "Yes, remember" still leads as the solid primary. Scoped under .approval-actions so
+   it outranks the `.approval-actions button { color:#fff; border:none }` base rule — otherwise the
+   white inherited text and removed border win the cascade and the button renders as a blank white box. */
+.approval-actions .approval-once {
+    background: rgba(255, 255, 255, 0.92);
+    color: #5a4600;
+    border: 1.5px solid #e0b000;
+}
+
+    .approval-actions .approval-once:hover {
+        background: #fff;
+    }
+
+/* Deliberate second step shown after "Always approve": the permanent-grant explanation + revoke path */
+.approval-remember {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.5rem;
+    flex: 1 1 100%;
+}
+
+.approval-remember-text {
+    font-size: 0.85rem;
+    color: #5a4600;
+    line-height: 1.5;
+}
+
+    .approval-remember-text code {
+        font-family: Consolas, Menlo, monospace;
+        font-size: 0.8rem;
+        background: rgba(255, 255, 255, 0.6);
+        border: 1px solid rgba(224, 176, 0, 0.45);
+        border-radius: 5px;
+        padding: 0.05rem 0.3rem;
+        color: #3a2e00;
+    }
+
 /* Suggestion chips shown on first load */
 .suggestions {
     display: flex;
@@ -200,3 +411,14 @@
         border-color: #4152d5;
         box-shadow: 0 2px 8px rgba(65, 82, 213, 0.12);
     }
+
+    .suggestion-chip:disabled {
+        cursor: not-allowed;
+        opacity: 0.5;
+    }
+
+        .suggestion-chip:disabled:hover {
+            background: rgba(255, 255, 255, 0.8);
+            border-color: rgba(140, 165, 220, 0.5);
+            box-shadow: none;
+        }

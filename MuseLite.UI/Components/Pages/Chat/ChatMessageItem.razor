@@ -13,6 +13,20 @@ else if (Message.Role == ChatRole.Assistant)
             <span class="tool-denied-icon">✕</span> Denied <strong>@deniedTool</strong>
         </div>
     }
+    else if (Message.AdditionalProperties?.TryGetValue(Chat.ToolRememberedPropertyKey, out var rememberedToolObj) == true
+        && rememberedToolObj is string rememberedTool)
+    {
+        <div class="tool-remembered-notice">
+            <span class="tool-remembered-icon">✓</span> Approved — <strong>@rememberedTool</strong> with these arguments will be approved automatically from now on
+        </div>
+    }
+    else if (Message.AdditionalProperties?.TryGetValue(Chat.ToolRememberFailedPropertyKey, out var notRememberedToolObj) == true
+        && notRememberedToolObj is string notRememberedTool)
+    {
+        <div class="tool-remembered-notice">
+            <span class="tool-remembered-icon tool-remembered-icon-muted">✓</span> Approved <strong>@notRememberedTool</strong> once — couldn’t save it as a standing approval
+        </div>
+    }
 
     foreach (var content in Message.Contents)
     {
@@ -27,9 +41,15 @@ else if (Message.Role == ChatRole.Assistant)
                     </div>
                 </div>
                 <div class="assistant-message-header">Assistant</div>
-                <div class="assistant-message-text">@text</div>
+                <div class="assistant-message-text">@Chat.StripCitationMarkers(text)</div>
             </div>
         }
+    }
+
+    if (Message.AdditionalProperties?.TryGetValue(Chat.ImagesPropertyKey, out var imagesObj) == true
+        && imagesObj is ImageResult imageResult && imageResult.Images.Count > 0)
+    {
+        <ImageGallery Images="@imageResult.Images" />
     }
 }
 

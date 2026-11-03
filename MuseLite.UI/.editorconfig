@@ -5,6 +5,12 @@ root = false
 dotnet_diagnostic.CS8933.severity = none
 
 [*.cs]
+# S1125 (redundant boolean literal) conflicts with this repo's house standard of explicit
+# `is true` / `is false` (enforced by the JCZ analyzer). It is suppressed globally and in every
+# first-party project; duplicated HERE so the project still builds when cloned from the public
+# repo, which has no parent .editorconfig to inherit the global suppression from.
+dotnet_diagnostic.S1125.severity = none
+
 # Don't require ConfigureAwait in ASP.NET Core apps
 dotnet_diagnostic.CA2007.severity = none
 

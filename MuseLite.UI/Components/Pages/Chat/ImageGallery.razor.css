@@ -1,0 +1,95 @@
+.image-gallery {
+    display: grid;
+    /* One image per row (single column): each image spans the message width, so images render large.
+       Add a max-width here (or on .image-gallery-item) if they get too big on very wide windows. */
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    margin: 0.5rem 0 0.25rem;
+}
+
+.image-gallery-item {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.image-gallery-frame {
+    display: block;
+}
+
+.image-gallery-item a {
+    display: block;
+    line-height: 0;
+}
+
+/* Fallback card: hidden until the JS custom element flags a failed image, then it replaces the
+   broken <img> (which it hides) with a tidy "couldn't load" placeholder + a link to the source. */
+.image-gallery-fallback {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.3rem;
+    padding: 1.25rem 1rem;
+    border-radius: 8px;
+    border: 1px dashed rgba(0, 0, 0, 0.18);
+    background: rgba(0, 0, 0, 0.04);
+    color: #5a5a5a;
+    text-align: center;
+}
+
+.image-failed > a,
+.image-failed > img {
+    display: none;
+}
+
+.image-failed .image-gallery-fallback {
+    display: flex;
+}
+
+.image-gallery-fallback-icon {
+    font-size: 1.5rem;
+    line-height: 1;
+}
+
+.image-gallery-fallback-text {
+    font-size: 0.85rem;
+}
+
+.image-gallery-fallback-link {
+    font-size: 0.8rem;
+}
+
+.image-gallery-item img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 8px;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    background: rgba(0, 0, 0, 0.04);
+    object-fit: cover;
+}
+
+.image-gallery-caption {
+    font-size: 0.8rem;
+    line-height: 1.35;
+    color: #5a5a5a;
+}
+
+@media (prefers-color-scheme: dark) {
+    .image-gallery-item img {
+        border-color: rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    .image-gallery-caption {
+        color: #9aa0a6;
+    }
+
+    .image-gallery-fallback {
+        border-color: rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.05);
+        color: #9aa0a6;
+    }
+}

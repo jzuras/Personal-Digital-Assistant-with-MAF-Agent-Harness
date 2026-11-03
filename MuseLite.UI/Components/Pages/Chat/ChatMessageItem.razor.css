@@ -42,6 +42,41 @@
     color: #6d5555;
 }
 
+.tool-remembered-notice {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin: 0.1rem 0 0.4rem;
+    font-size: 0.8125rem;
+    color: #5a7068;
+    font-style: italic;
+}
+
+.tool-remembered-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.05rem;
+    height: 1.05rem;
+    border-radius: 9999px;
+    background: rgba(10, 107, 79, 0.14);
+    color: #0a6b4f;
+    font-size: 0.75rem;
+    font-style: normal;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+.tool-remembered-icon-muted {
+    background: rgba(120, 120, 120, 0.14);
+    color: #6d6d6d;
+}
+
+.tool-remembered-notice strong {
+    font-style: normal;
+    color: #55685f;
+}
+
 .assistant-message {
     display: grid;
     grid-template-rows: min-content;

@@ -58,3 +58,22 @@ textarea {
         color: #2a3ab8;
         background-color: rgba(65, 82, 213, 0.08);
     }
+
+/* Disabled state — while the agent server is unreachable the input is inert */
+.input-box:has(textarea:disabled) {
+    opacity: 0.6;
+}
+
+textarea:disabled {
+    cursor: not-allowed;
+}
+
+.send-button:disabled {
+    cursor: not-allowed;
+    color: #9aa0c4;
+}
+
+    .send-button:disabled:hover {
+        color: #9aa0c4;
+        background-color: transparent;
+    }

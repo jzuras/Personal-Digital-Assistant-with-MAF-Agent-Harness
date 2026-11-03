@@ -14,23 +14,70 @@
             <span class="header-title">Muse Lite</span>
             <span class="header-hint">Ask the agent to plan or execute a multi-step task</span>
         </div>
+        <div class="header-actions">
+            <button class="new-conversation" @onclick="ShowResetConfirm" disabled="@ConnectionPending">New conversation</button>
+        </div>
     </div>
 </header>
 
-<ChatMessageList Messages="@messages" InProgressMessage="@currentResponseMessage" Steps="@agentState?.Steps">
-    <NoMessagesContent>
-        <div class="suggestions">
-            <p>Try asking the agent to build a plan, for example:</p>
-            <div class="suggestion-chips">
-                <button class="suggestion-chip" @onclick='() => SendSuggestionAsync("Please build a plan to go to mars in 5 steps.")'>Plan a trip to Mars</button>
-                <button class="suggestion-chip" @onclick='() => SendSuggestionAsync("Please build a plan to make pizza in 10 steps.")'>Make a pizza</button>
-                <button class="suggestion-chip" @onclick='() => SendSuggestionAsync("Please build a plan to learn guitar in 3 steps.")'>Learn guitar</button>
-            </div>
+@if (ConnectionPending)
+{
+    <div class="connection-panel @ConnectionCssClass">
+        <div class="connection-detail">
+            <span class="connection-title">
+                @(Connection == ConnectionStatus.Connecting ? "Connecting to the assistant…" : "The assistant is offline")
+            </span>
+            <span class="connection-text">
+                @(Connection == ConnectionStatus.Connecting
+                    ? "Reaching the agent server."
+                    : "Can’t reach the agent server — make sure it’s running. This will reconnect automatically.")
+            </span>
         </div>
+        @if (Connection == ConnectionStatus.Offline)
+        {
+            <div class="connection-actions">
+                <button class="connection-retry" @onclick="RetryNowAsync">Retry now</button>
+            </div>
+        }
+    </div>
+}
+
+@if (ResetConfirmVisible)
+{
+    <div class="reset-panel">
+        <div class="reset-detail">
+            <span class="reset-title">Start a new conversation?</span>
+            <span class="reset-text">
+                This clears the <strong>current conversation</strong> and starts fresh. What the agent
+                knows about you is <strong>kept</strong>: your memory files (identity, preferences, memories,
+                watchlist) and your standing approvals are untouched. If you want to double-check first, you
+                can open those files before resetting — nothing in them is lost.
+            </span>
+        </div>
+        <div class="reset-actions">
+            <button class="reset-confirm" @onclick="NewConversationAsync">Start new</button>
+            <button class="reset-cancel" @onclick="CancelResetConfirm">Cancel</button>
+        </div>
+    </div>
+}
+
+<ChatMessageList Messages="@Messages" InProgressMessage="@CurrentResponseMessage" Steps="@AgentState?.Steps">
+    <NoMessagesContent>
+        @if (ShowSuggestions)
+        {
+            <div class="suggestions">
+                <p>Try asking the agent to build a plan, for example:</p>
+                <div class="suggestion-chips">
+                    <button class="suggestion-chip" @onclick='() => SendSuggestionAsync("Please build a plan to go to mars in 5 steps.")' disabled="@(Connection != ConnectionStatus.Online)">Plan a trip to Mars</button>
+                    <button class="suggestion-chip" @onclick='() => SendSuggestionAsync("Please build a plan to make pizza in 4 steps.")' disabled="@(Connection != ConnectionStatus.Online)">Make a pizza</button>
+                    <button class="suggestion-chip" @onclick='() => SendSuggestionAsync("Please build a plan to learn guitar in 3 steps.")' disabled="@(Connection != ConnectionStatus.Online)">Learn guitar</button>
+                </div>
+            </div>
+        }
     </NoMessagesContent>
 </ChatMessageList>
 
-@if (pendingApproval is not null)
+@if (PendingApproval is not null)
 {
     <div class="approval-panel">
         <div class="approval-detail">
@@ -47,13 +94,31 @@
                 </ul>
             }
         </div>
-        <div class="approval-actions">
-            <button class="approval-approve" @onclick="() => RespondToApprovalAsync(true)">Approve</button>
-            <button class="approval-deny" @onclick="() => RespondToApprovalAsync(false)">Deny</button>
-        </div>
+        @if (ApprovalRememberConfirmVisible)
+        {
+            <div class="approval-remember">
+                <span class="approval-remember-text">
+                    Remember permanently? <strong>@PendingApprovalToolName</strong> with these exact arguments
+                    will be auto-approved in future conversations, with no prompt. You can revoke it anytime
+                    by editing <code>approval-rules.json</code> in the <code>working/</code> folder.
+                </span>
+                <div class="approval-actions">
+                    <button class="approval-approve" @onclick="AlwaysApproveAsync">Yes, remember</button>
+                    <button class="approval-once" @onclick="() => RespondToApprovalAsync(true)">No, just once</button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="approval-actions">
+                <button class="approval-approve" @onclick="() => RespondToApprovalAsync(true)">Approve once</button>
+                <button class="approval-always" @onclick="ShowRememberConfirm">Always approve</button>
+                <button class="approval-deny" @onclick="() => RespondToApprovalAsync(false)">Deny</button>
+            </div>
+        }
     </div>
 }
 
 <div class="chat-container">
-    <ChatInput OnSend="@AddUserMessageAsync" @ref="@chatInput" />
+    <ChatInput OnSend="@AddUserMessageAsync" @ref="@ChatInput" Disabled="@ConnectionPending" />
 </div>

@@ -1,16 +1,19 @@
 namespace MyAssistant.ApprovalPolicy;
 
+// DESIGN TRIP-WIRE: this floor only decides "may this be auto-approved?". In an unattended
+// context (no human to answer a prompt), that is not enough — also gate the toolset by context
+// so dangerous tools aren't reachable at all.
+
 /// <summary>
 /// The non-overridable floor: a set of tool names whose approvals may never become durable.
-/// A <see cref="HumanOnly"/> tool is always a fresh human decision and can never be promoted
+/// A human-only tool is always a fresh human decision and can never be promoted
 /// to <see cref="ApprovalTier.ActSilently"/>, no matter what the user clicks.
 /// </summary>
 /// <remarks>
 /// This is a semantics-blind stand-in for Muse/Dots' hardcoded "purchases are never
 /// auto-approvable" class: rather than classifying actions, we rely on the tool author to
-/// list a tool here (next to its <c>requireApproval</c> gating). For Phase 1 the set is
-/// empty because no money/credential tool exists yet. See the decision log in
-/// MyAssistant-DESIGN.html.
+/// list a tool here (next to its <c>requireApproval</c> gating). The set is empty for now
+/// because no money/credential tool exists yet.
 /// </remarks>
 public sealed class HumanOnlyPolicy
 {
@@ -39,7 +42,7 @@ public sealed class HumanOnlyPolicy
     /// <see langword="false"/> if it is human-only.</returns>
     public bool IsPersistable(string toolName)
     {
-        return !this.NonPersistableTools.Contains(toolName);
+        return this.NonPersistableTools.Contains(toolName) is false;
     }
 
     /// <summary>
@@ -50,7 +53,7 @@ public sealed class HumanOnlyPolicy
     /// <see cref="ApprovalTier.AskFirst"/>.</returns>
     public ApprovalTier GetTier(string toolName)
     {
-        return this.NonPersistableTools.Contains(toolName)
+        return this.NonPersistableTools.Contains(toolName) is true
             ? ApprovalTier.HumanOnly
             : ApprovalTier.AskFirst;
     }

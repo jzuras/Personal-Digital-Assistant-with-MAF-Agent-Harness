@@ -25,18 +25,32 @@
             var step = Steps[i];
             var isCompleted = step.Status == StepStatus.Completed;
             var isCurrent = !isCompleted && i == firstPendingIndex;
-            var isFuture = !isCompleted && !isCurrent;
             var isLast = i == Steps.Count - 1;
 
-            <div class="step-item @(isCompleted ? "step-completed" : isCurrent ? "step-current" : "step-future")">
+            // One state suffix drives the three parallel class names (step-/icon-/desc-); a switch
+            // expression (not a nested ternary) keeps it analyzer-clean.
+            var state = (isCompleted, isCurrent) switch
+            {
+                (true, _) => "completed",
+                (_, true) => "current",
+                _ => "future",
+            };
+            var stateLabel = state switch
+            {
+                "completed" => "Completed",
+                "current" => "In progress",
+                _ => "Pending",
+            };
+
+            <div class="step-item step-@state">
 
                 @if (!isLast)
                 {
                     <div class="step-connector" aria-hidden="true"></div>
                 }
 
-                <div class="step-icon @(isCompleted ? "icon-completed" : isCurrent ? "icon-current" : "icon-future")"
-                     aria-label="@(isCompleted ? "Completed" : isCurrent ? "In progress" : "Pending")">
+                <div class="step-icon icon-@state"
+                     aria-label="@stateLabel">
                     @if (isCompleted)
                     {
                         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -60,7 +74,7 @@
                 </div>
 
                 <div class="step-text">
-                    <div class="step-description @(isCompleted ? "desc-completed" : isCurrent ? "desc-current" : "desc-future")">
+                    <div class="step-description desc-@state">
                         @step.Description
                     </div>
                     @if (isCurrent)

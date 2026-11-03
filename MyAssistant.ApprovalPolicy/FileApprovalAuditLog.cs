@@ -35,7 +35,7 @@ public sealed class FileApprovalAuditLog : IApprovalAuditLog
         try
         {
             string? directory = Path.GetDirectoryName(this.FilePath);
-            if (!string.IsNullOrEmpty(directory))
+            if (string.IsNullOrEmpty(directory) is false)
             {
                 Directory.CreateDirectory(directory);
             }
