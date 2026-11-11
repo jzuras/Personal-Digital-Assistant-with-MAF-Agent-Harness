@@ -4,6 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>3c23d39a-69a8-4719-9da1-0f4c93c693a2</UserSecretsId>
   </PropertyGroup>
 
   <!-- Build-time enforcement (mirrors MuseLite.UI + the nuget-audit reference); see the
@@ -16,12 +17,19 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <!-- Analyzers. SonarAnalyzer.CSharp + MS Threading are public NuGet (portable); JczLLC.Analyzers.CodingStandards
+       is Jim's OWN analyzer via a LOCAL cross-repo project ref — strip it when copying to public (see CLAUDE.md). -->
   <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.AzureAppConfiguration" Version="8.6.1" />
     <PackageReference Include="SonarAnalyzer.CSharp" Version="10.35.0.4138" PrivateAssets="all" />
     <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" PrivateAssets="all" />
+    <ProjectReference Include="..\..\Analyzers\CodingStandards\src\JczLLC.Analyzers.CodingStandards\JczLLC.Analyzers.CodingStandards.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" Condition="Exists('..\..\Analyzers\CodingStandards\src\JczLLC.Analyzers.CodingStandards\JczLLC.Analyzers.CodingStandards.csproj')" />
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Blob client construction for the durable-context Blob backend (BlobServiceClient); the
+         BlobSnapshotStore implementation itself lives in MyAssistant.DurableContext. -->
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.29.2" />
     <PackageReference Include="Azure.AI.Projects" Version="3.0.0-beta.6" />
     <PackageReference Include="Microsoft.Agents.AI.DevUI" Version="1.27.0-preview.261030.1" />
     <PackageReference Include="Microsoft.Agents.AI.Foundry" Version="1.27.0-preview.261030.1" />
@@ -31,10 +39,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Keep appsettings.json OUT of the published/hosted container: in the cloud all config comes from
+         Azure App Configuration (MuseLite:*) plus azure.yaml environment variables, so no committed
+         appsettings (and no placeholder values) ships in the image. It is still copied to the local
+         build output for local dev (CopyToOutputDirectory is unaffected). -->
+    <Content Update="appsettings.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Durable approval policy library (zero external deps), shared with the console app. -->
-    <ProjectReference Include="..\MyAssistant.ApprovalPolicy\MyAssistant.ApprovalPolicy.csproj" />
+    <ProjectReference Include="..\MuseLite.ApprovalPolicy\MuseLite.ApprovalPolicy.csproj" />
     <!-- Durable-context building blocks (MyAgentSessionStore, snapshot store, SessionRecovery), shared with the console. -->
-    <ProjectReference Include="..\MyAssistant.DurableContext\MyAssistant.DurableContext.csproj" />
+    <ProjectReference Include="..\MuseLite.DurableContext\MuseLite.DurableContext.csproj" />
   </ItemGroup>
 
 </Project>
