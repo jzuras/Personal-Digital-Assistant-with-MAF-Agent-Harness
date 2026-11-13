@@ -1,6 +1,6 @@
 using Microsoft.Extensions.AI;
 
-namespace MyAssistantServer.AgenticUI;
+namespace MuseLite.AgenticUI;
 
 /// <summary>
 /// Removes hosted-tool call/result items from the message history before it is sent to the model.

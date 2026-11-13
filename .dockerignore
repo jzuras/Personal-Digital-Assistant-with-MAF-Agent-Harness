@@ -1,0 +1,32 @@
+# Keep the ACR build context small and secret-free. The Dockerfile COPYs only the three server-chain
+# projects; everything else is excluded from the upload.
+
+# Build artifacts
+**/bin/
+**/obj/
+
+# Local / IDE / tooling state
+.vs/
+.git/
+.github/
+.azure/
+**/*.user
+
+# Secrets — must NEVER enter the image context
+**/appsettings.*Development*.json
+**/*.runsettings
+
+# Projects that are not part of the server image
+MuseLite.UI/
+MyAssistantConsole/
+Harness_Shared_Console/
+Harness_Shared_Console_OpenAI/
+ConsoleReactiveComponents/
+ConsoleReactiveFramework/
+
+# Docs / notes / assets
+*.html
+*.md
+*.txt
+*.png
+*.wsb

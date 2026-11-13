@@ -1,6 +1,7 @@
 using System.ComponentModel;
+using MyAssistant.DurableContext;
 
-namespace MyAssistantServer.AgenticUI;
+namespace MuseLite.AgenticUI;
 
 /// <summary>
 /// Agentic-UI tool for showing images inline. The model calls <see cref="ShowImages"/> with image URLs it

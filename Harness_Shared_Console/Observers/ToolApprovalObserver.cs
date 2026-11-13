@@ -202,7 +202,7 @@ public sealed class ToolApprovalObserver : ConsoleObserver
                 await ux.WriteInfoLineAsync(
                     $"Remember permanently? {call.Name} with these exact arguments will be auto-approved "
                     + $"in all future sessions.{Environment.NewLine}Revoke anytime by editing or deleting the "
-                    + $"entry in:{Environment.NewLine}  {this._durableStore!.FilePath}",
+                    + $"entry in:{Environment.NewLine}  {this._durableStore!.RevocationLocation}",
                     ConsoleColor.Yellow).ConfigureAwait(false);
 
                 // Deliberate second step: confirm the permanent grant before writing it.
@@ -224,7 +224,7 @@ public sealed class ToolApprovalObserver : ConsoleObserver
         const string yes = "Yes, remember permanently";
         const string no = "No, just approve once";
 
-        string filePath = this._durableStore!.FilePath;
+        string revocationLocation = this._durableStore!.RevocationLocation;
         // Keep this single-line: the bottom list-selection panel renders only a one-line title.
         // The full explanation (what this means + revoke path) is written to the scroll area by
         // the caller before this question is queued.
@@ -240,7 +240,7 @@ public sealed class ToolApprovalObserver : ConsoleObserver
                 {
                     string canonicalArgs = ArgCanonicalizer.Canonicalize(call.Arguments);
                     await this._durableStore!.AddRuleAsync(call.Name, canonicalArgs);
-                    await this.WriteAnswerAsync(ux, prompt, $"✅ Remembered permanently (revoke in {filePath})", denied: false);
+                    await this.WriteAnswerAsync(ux, prompt, $"✅ Remembered permanently (revoke in {revocationLocation})", denied: false);
                     return new ChatMessage(ChatRole.User, [request.CreateResponse(approved: true, reason: "User approved and persisted a durable grant")]);
                 }
 

@@ -17,7 +17,7 @@ Each post builds on the last; the code here is the companion.
 - **My LinkedIn Post #2** — AG-UI Client and Server Apps. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7519104949042089985/))_
 - **My LinkedIn Post #3** — AG-UI Client-Server Approval Round-Trip. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7521940704856576001/))_
 - **My LinkedIn Post #4** — New Features Including Agentic UI. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7523184171528380416/))_
-- Post #5 — _TBD (coming soon)._
+- **My LinkedIn Post #5** — Hosting on Agent Service. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7526809981241704448/))_
 
 
 ## Status
@@ -30,6 +30,7 @@ Early work in progress — the code reflects that.
 - ✅ Replaced the console with a **Blazor + AG-UI** client talking to a separately-hosted agent. (Console remains but no longer being developed.)
 - ✅ Human-in-the-Loop approval process spanning client and server.
 - ✅ Agentic UI for images.
+- ✅ Agent Hosted in Foundry Agent Service.
 - ⏳ End-goal: the rest of the MS Blog series, server-memory, and more!
 
 ## Running it

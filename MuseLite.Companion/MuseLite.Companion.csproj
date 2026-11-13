@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <!-- Build-time enforcement (mirrors the MuseLite server; see the MuseLite.ApprovalPolicy csproj
+       for the per-property rationale). -->
+  <PropertyGroup>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <AnalysisMode>All</AnalysisMode>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.AzureAppConfiguration" Version="8.6.1" />
+    <!-- PERF: Azure.Core >= 1.63.0 is required for acceptable DefaultAzureCredential startup on a dev
+         box. This app's natural transitive floor is 1.61.0, which predates the Azure.Core 1.63.0 fix
+         "DefaultAzureCredential taking up to a minute to continue past managed identity on hosts where
+         IMDS is unavailable" — measured here (2026-11-09) as ~30s vs ~6-8s App Configuration startup,
+         because the chain hung on the managed-identity IMDS probe before falling through to the
+         credential that actually works locally. Pinned to 1.64.0 to match the agent server's resolved
+         graph (its Azure.AI.Projects dependency floors it there). Do not remove as "redundant": without
+         it the floor silently drops back to 1.61.0. (Azure.Core 1.64.0 itself floors MSAL at 4.90.0,
+         so no separate Microsoft.Identity.Client pin is needed.) -->
+    <PackageReference Include="Azure.Core" Version="1.64.0" />
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.35.0.4138" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Keep appsettings.json OUT of a published/hosted image, same pattern as the agent server: in the
+         cloud all config comes from Azure App Configuration (MuseLite:*) plus deployment env vars. It is
+         still copied to the local build output for local dev. -->
+    <Content Update="appsettings.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Approval policy (human-only floor, canonicalization, rule store) for the persist-approval endpoint. -->
+    <ProjectReference Include="..\MuseLite.ApprovalPolicy\MuseLite.ApprovalPolicy.csproj" />
+    <!-- Durable-context building blocks: DurableStorage (shared store composition), DurableHistoryReader,
+         and the snapshot store whose ArchiveAsync backs the reset endpoint. -->
+    <ProjectReference Include="..\MuseLite.DurableContext\MuseLite.DurableContext.csproj" />
+  </ItemGroup>
+
+</Project>

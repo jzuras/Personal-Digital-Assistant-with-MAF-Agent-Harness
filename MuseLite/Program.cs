@@ -8,15 +8,15 @@ using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;
 using Microsoft.Extensions.AI;
 using MyAssistant.ApprovalPolicy;
 using MyAssistant.DurableContext;
-using MyAssistantServer.AgenticUI;
+using MuseLite.AgenticUI;
 using OpenAI.Responses;
 using System.ClientModel;
 using System.ClientModel.Primitives;
+using System.Diagnostics;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 
-namespace MyAssistantServer;
+namespace MuseLite;
 
 #pragma warning disable OPENAI001 // Suppress experimental API warnings for Responses API usage.
 #pragma warning disable MAAI001 // Suppress experimental API warnings for FileAccessStore.
@@ -44,6 +44,47 @@ internal static class Program
     {
         var builder = WebApplication.CreateBuilder(args);
 
+        // Load configuration from Azure App Configuration (it overrides local appsettings.json because the
+        // other providers are added first by CreateBuilder()). Two ways to connect:
+        //   - a connection string (local dev; its presence/absence is the on/off switch for App Config), or
+        //   - an endpoint URI authenticated with the running identity via DefaultAzureCredential (keyless:
+        //     a managed/agent identity when hosted, your dev identity when running locally). The identity
+        //     must hold the "App Configuration Data Reader" data-plane role on the store.
+        // If neither is set, App Configuration is skipped and only local appsettings.json is used.
+        var connectionString = builder.Configuration.GetConnectionString("AppConfig");
+        var endpoint = builder.Configuration["AppConfig:Endpoint"];
+        // Startup timing: the ConfigurationManager loads the App Configuration source eagerly inside this
+        // block, so the stopwatch captures the real network/auth cost. Logged after Build() (first point a
+        // logger exists) to compare startup cost against the companion app's identical block.
+        var appConfigStopwatch = Stopwatch.StartNew();
+        if (string.IsNullOrEmpty(connectionString) is false || string.IsNullOrEmpty(endpoint) is false)
+        {
+            builder.Configuration.AddAzureAppConfiguration(options =>
+            {
+                if (string.IsNullOrEmpty(connectionString) is false)
+                {
+                    options.Connect(connectionString);
+                }
+                else if (string.IsNullOrEmpty(endpoint) is false)
+                {
+                    options.Connect(new Uri(endpoint), new DefaultAzureCredential());
+                }
+
+                // Load all keys that start with "MuseLite:"
+                options.Select("MuseLite:*")
+                       // Configure to reload configuration if the registered sentinel key is modified.
+                       .ConfigureRefresh(refreshOptions =>
+                            refreshOptions.Register("MuseLite:Settings:Sentinel", refreshAll: true));
+
+                options.UseFeatureFlags(featureFlagOptions =>
+                {
+                    featureFlagOptions.Select("MuseLite:*");
+                });
+            });
+        }
+
+        appConfigStopwatch.Stop();
+
 
         // AgenticUI from dojo
         builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.TypeInfoResolverChain.Add(AGUIDojoServerSerializerContext.Default));
@@ -58,7 +99,7 @@ internal static class Program
 
         builder.Services.AddHttpClient().AddLogging();
 
-        string[] allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+        string[] allowedOrigins = builder.Configuration.GetSection("MuseLite:Cors:AllowedOrigins").Get<string[]>() ?? [];
         builder.Services.AddCors(options =>
             options.AddDefaultPolicy(policy =>
                 policy.WithOrigins(allowedOrigins)
@@ -69,27 +110,51 @@ internal static class Program
 
         var app = builder.Build();
 
+        // Startup diagnostic for comparing App Configuration load cost across the two apps. CA1848
+        // (LoggerMessage delegates) and CA1873 (expensive-arg evaluation) are over-engineering for a
+        // one-shot startup line whose argument is a trivial property read.
+#pragma warning disable CA1848, CA1873
+        app.Logger.LogInformation(
+            "Azure App Configuration startup block took {ElapsedMs} ms.",
+            appConfigStopwatch.ElapsedMilliseconds);
+#pragma warning restore CA1848, CA1873
+
         app.UseCors();
 
-        app.MapAGUIServer("/my_assistant", server.Agent);
-
-        // Server-authoritative history hydration. The one durable context lives on the server; a freshly
-        // opened client GETs this on load to paint the whole conversation instead of starting blank. Reads
-        // the stored transcript straight from the history provider (GetMessages), projected to a minimal
-        // {role, text} shape. The session-store key is ignored by MyAgentSessionStore (one fixed context),
-        // so any non-empty id works.
-        app.MapGet("/my_assistant/history", async (CancellationToken cancellationToken) =>
+        // Warm-up short-circuit — answered here, BEFORE the AG-UI handler, so it never reaches the model or
+        // the durable session. A hosted Foundry agent exposes no client-reachable readiness endpoint (the
+        // platform /readiness probe is not proxied to callers), so the client probes availability by POSTing a
+        // no-op "warm-up" invocation carrying this header. The x-client-* namespace is guaranteed forwarded to
+        // the container, and the inbound request alone wakes a scaled-to-zero micro-VM — so a 204 both answers
+        // "reachable" and warms the agent for the user's first real turn. Uniform local and hosted.
+        app.Use(async (HttpContext context, RequestDelegate next) =>
         {
-            AgentSession? session = await server.SessionStore
-                .GetSessionAsync(server.BaseAgent, new AgentSessionStoreKey("hydration"), cancellationToken)
-                .ConfigureAwait(false);
-            if (session is null)
+            if (string.Equals(context.Request.Headers["x-client-warmup"], "true", StringComparison.OrdinalIgnoreCase) is true)
             {
-                return Results.Json(Array.Empty<HistoryMessage>(), jsonOptions);
+                context.Response.StatusCode = StatusCodes.Status204NoContent;
+                return;
             }
 
-            List<ChatMessage> stored = server.HistoryProvider.GetMessages(session);
-            return Results.Json(ProjectToHistory(stored), jsonOptions);
+            await next(context).ConfigureAwait(false);
+        });
+
+        // Single AG-UI mount. An Azure AI Foundry Hosted Agent forwards each invocation body to /invocations
+        // and streams the AG-UI SSE response back; the local client targets the same route directly. The
+        // custom /history, /reset and /approvals endpoints below are siblings under the same prefix, so one
+        // endpoint value drives both chat and the custom calls in every environment (the query string, which
+        // only the hosted path needs, is a separate client-side config value appended after the path).
+        app.MapAGUIServer("/invocations", server.Agent);
+
+        // Server-authoritative history hydration. The one durable context lives on the server; a freshly
+        // opened client GETs this on load to paint the whole conversation instead of starting blank. Reading
+        // is delegated to the shared DurableHistoryReader, which deserializes the stored snapshot with a
+        // dummy (no-model) client and projects it to {role, text, images}. An empty list means no context yet.
+        app.MapGet("/invocations/history", async (CancellationToken cancellationToken) =>
+        {
+            IReadOnlyList<HistoryMessage> history = await server.HistoryReader
+                .ReadAsync(cancellationToken)
+                .ConfigureAwait(false);
+            return Results.Json(history, jsonOptions);
         });
 
         // Memory-preserving "new conversation" reset. Archives the one durable context (timestamped, under
@@ -100,7 +165,7 @@ internal static class Program
         // effect on the very next turn with no restart. DeleteSessionAsync archives under the store's
         // single-writer guard; the session-store key is ignored by MyAgentSessionStore (one fixed context), so
         // any non-empty id works.
-        app.MapPost("/my_assistant/reset", async (CancellationToken cancellationToken) =>
+        app.MapPost("/invocations/reset", async (CancellationToken cancellationToken) =>
         {
             await server.SessionStore
                 .DeleteSessionAsync(server.BaseAgent, new AgentSessionStoreKey("reset"), cancellationToken)
@@ -117,7 +182,7 @@ internal static class Program
         // raw POST can never persist a grant for a tool that must always be a fresh human decision; (2) the
         // SERVER canonicalizes the arguments with the same ArgCanonicalizer the predicate uses, so the stored
         // rule is guaranteed to match (client-side canonicalization could drift and silently never match).
-        app.MapPost("/my_assistant/approvals", async (PersistApprovalRequest request) =>
+        app.MapPost("/invocations/approvals", async (PersistApprovalRequest request) =>
         {
             if (string.IsNullOrWhiteSpace(request.ToolName) is true)
             {
@@ -141,6 +206,11 @@ internal static class Program
             return Results.Json(new PersistApprovalResult(true, null), jsonOptions);
         });
 
+        // Readiness probe the Foundry Hosted Agents platform polls before routing invocations. Without it
+        // the platform's health check hits nothing and invokes fail with 424 session_not_ready, even though
+        // the app itself is fine. Harmless locally.
+        app.MapGet("/readiness", () => Results.Ok(new { status = "ready" }));
+
         await app.RunAsync();
     }
 
@@ -148,16 +218,17 @@ internal static class Program
     // https://github.com/ag-ui-protocol/ag-ui/tree/bc0a2c1d25ed184ee05775e66e8eda50f679ee25/integrations/microsoft-agent-framework/dotnet/examples/AGUIDojoServer
     private static AssistantServer CreateAgenticUI(WebApplicationBuilder builder, JsonSerializerOptions jsonOptions)
     {
-        // Provider selector — single source of truth. Flip this to switch models.
+        // Provider selector — single source of truth, config-driven via MuseLite:UseOpenRouter.
+        // Locally this reads from appsettings; when running as a hosted agent it comes from Azure App
+        // Configuration (the same MuseLite:* source as the OpenRouter key), so the model can be switched
+        // without a redeploy. Absent key defaults to false (the Azure/Foundry model).
         // ⚠ The durable session snapshot in context/ is PROVIDER-SPECIFIC: an OpenRouter-written
         // snapshot loaded into Azure (or vice-versa) causes an Azure HTTP 400 invalid_payload. Clear
-        // context/*.json when switching providers.
-        bool useOpenRouter = false;
-#pragma warning disable CA1508 // Flag above triggers dead-code warning
-        IChatClient chatClient = (useOpenRouter is true)
+        // the context snapshot when switching providers.
+        bool useOpenRouter = builder.Configuration.GetValue<bool>("MuseLite:UseOpenRouter");
+        IChatClient chatClient = useOpenRouter is true
             ? CreateOpenRouterChatClient(builder)
             : CreateAzureOpenAIChatClient(builder);
-#pragma warning restore CA1508
 
         string name = "AgenticUIAgent";
         // <instructions>
@@ -240,6 +311,17 @@ internal static class Program
     your answer, they do not replace it. If you cannot find a real image URL, tell the user so rather than
     guessing or inventing a URL.
 
+    ### Sending email
+
+    There are two email tools:
+    - send_email(to, subject, body) — sends to ANY recipient. Use this when the user asks you to
+      email someone. It always requires approval: a prompt is shown and nothing is sent until it is
+      answered.
+    - send_self_email(subject, body) — sends a message to the owner (the user) themselves, such as a
+      summary, reminder, or notification. It takes NO recipient; it can only reach the owner.
+    Choose send_self_email only when the message is for the owner themselves; use send_email for
+    anyone else. Do not claim an email was sent unless the tool call actually succeeded.
+
     ### Important
 
     You provide information and analysis only — you are not a licensed financial advisor and you
@@ -269,16 +351,66 @@ internal static class Program
         // the human-only floor must be enforced STRUCTURALLY: gate the toolset by context here
         // (hand unattended runs a restricted read + notify set), not by relying on the approval
         // verdict alone — nobody is present to answer the prompt.
+        //
+        // Decisions intentionally DEFERRED to that point (2026-11-03) — not enough known yet; they
+        // depend on the cloud/runtime model, which is undecided:
+        //   1. How the app learns it is running unattended vs attended — a startup/run-mode arg, a
+        //      separate host/entrypoint, or a flag on the scheduled trigger. Undecided on purpose.
+        //   2. The per-context toolset. send_email requires a human approval every time (it is on the
+        //      human-only floor below), so an unattended run must NOT be given it; give such a run
+        //      send_self_email (structurally owner-only, auto-approved) instead. Enforce this by which
+        //      tools exist in that context, not by trusting the model's tool choice.
+        //   3. Auditing of auto-approved self-sends in an unattended run (the current auto-approval of
+        //      send_self_email is a code predicate that does not write the approval audit log).
+
+        // Durable storage — one config choice (DurableContext:Backend) drives every durable store. The
+        // composition (backend flag, Blob client build, container/directory selection, and the
+        // agent-inaccessible policy store split) is shared with the companion app via DurableStorage, so
+        // the two processes can never drift on where the durable state lives.
+        DurableStorage storage = DurableStorage.Create(builder.Configuration, AppContext.BaseDirectory);
+        IPolicyTextStore policyStore = storage.PolicyStore;
 
         // Durable approval policy, mirroring the console. A call with no stored rule prompts; a call whose
-        // exact canonicalized args match a rule in working/approval-rules.json is auto-approved silently
+        // exact canonicalized args match a rule in the policy store's approval-rules.json is auto-approved silently
         // (and audited). This is the read side — the same ApprovalRuleStore the console writes to, so a
         // grant made console-side is honored here. The client's "remember permanently" choice writes to this
-        // same store via the POST /my_assistant/approvals endpoint (see MapPost in Main).
-        string workingDir = Path.Combine(AppContext.BaseDirectory, "working");
-        var approvalAuditLog = new FileApprovalAuditLog(Path.Combine(workingDir, "approval-audit.log"));
-        var approvalStore = new ApprovalRuleStore(Path.Combine(workingDir, "approval-rules.json"), approvalAuditLog);
-        var humanOnlyPolicy = new HumanOnlyPolicy();
+        // same store via the POST /invocations/approvals endpoint (see MapPost in Main).
+        var approvalAuditLog = new ApprovalAuditLog(policyStore, "approval-audit.log");
+        // No tool is declared subset-eligible, so the store's argument-subset matching is currently
+        // DORMANT (2026-11-03). It was built for a recipient-scoped "always OK to email myself" grant,
+        // then superseded by the two-tool split below: a structurally owner-only send_self_email that is
+        // auto-approved outright, plus a send_email that is floored (always a fresh human decision).
+        // The subset capability is kept — not removed — as a general "auto-approve when an argument
+        // equals a value" mechanism (e.g. a future small set of trusted recipients). To re-activate it,
+        // pass the eligible tool name(s) here as subsetEligibleTools.
+        var approvalStore = new ApprovalRuleStore(
+            policyStore,
+            "approval-rules.json",
+            approvalAuditLog);
+
+        // The human-only floor comes from HumanOnlyPolicy.CreateDefault() — one source shared by every
+        // write entry point (this server and the companion app) so the floor can never drift between them.
+        // send_email is on that floor: sending to an arbitrary recipient is outward-facing and irreversible,
+        // so it is always a fresh human decision and can never be auto-approved or remembered (a
+        // durable/standing grant for it is refused). It still works in attended chat — it prompts and the
+        // human approves each send. send_self_email is deliberately NOT floored: it can only reach the owner
+        // (recipient fixed in code), so it is auto-approved (see AutoApprovalRules).
+        var humanOnlyPolicy = HumanOnlyPolicy.CreateDefault();
+
+        // Outbound email sender: app-only Microsoft Graph sendMail, configured from the MuseLite:Email section
+        // (real values come from Azure App Configuration; the ClientSecret is a secret and lives only there).
+        // All mail is sent FROM MuseLite:Email:SenderAddress; send_self_email also sends TO it, so its recipient
+        // is fixed here and is never a model-visible argument (the tool can only reach the owner). Each send is
+        // appended to email-send.log in the (agent-inaccessible) policy store — send_self_email is auto-approved
+        // (no approval-audit entry), so the tool itself carries the accountability trail. When the credentials
+        // are absent, the tools return a clear "not configured" message instead of attempting a send.
+        var emailTools = new EmailTools(
+            builder.Configuration["MuseLite:Email:TenantId"],
+            builder.Configuration["MuseLite:Email:ClientId"],
+            builder.Configuration["MuseLite:Email:ClientSecret"],
+            builder.Configuration["MuseLite:Email:SenderAddress"],
+            policyStore,
+            "email-send.log");
 
         // Chat-history provider hoisted to a local so the /history hydration endpoint can read the stored
         // transcript via GetMessages(session) (see the MapGet in Main). The compaction wiring is documented
@@ -295,7 +427,7 @@ internal static class Program
 
         // Small logger factory for the opt-in debug diagnostics (request dump + stream-error surfacing),
         // bound to the app's Logging configuration so they obey the standard log levels: silent at the
-        // default Information level, enabled by setting "MyAssistantServer.AgenticUI" to Debug. Built here
+        // default Information level, enabled by setting "MuseLite.AgenticUI" to Debug. Built here
         // because the chat-client wrappers are composed before the app (and its ILoggerFactory) exists. App
         // lifetime — intentionally not disposed.
         ILoggerFactory diagnosticLoggerFactory = LoggerFactory.Create(logging =>
@@ -325,8 +457,10 @@ internal static class Program
 
             // Parity with the console: durable, inspectable memory via the file_access tools in working/
             // (identity/preferences/memories + watchlist.md), with the built-in per-session file memory
-            // disabled (a single inspectable store).
-            FileAccessStore = new FileSystemAgentFileStore(workingDir),
+            // disabled (a single inspectable store). Local dev uses the filesystem; the Blob backend routes
+            // the same store to a working-memory container so the agent's memory survives restarts and is
+            // shared across hosted sessions.
+            FileAccessStore = storage.WorkingStore,
             DisableFileMemory = true,
 
             // TodoProvider OFF for both providers. Its
@@ -376,9 +510,17 @@ internal static class Program
                             return false;
                         }
 
-                        string canonicalArgs = ArgCanonicalizer.Canonicalize(call.Arguments);
-                        return await approvalStore.IsApprovedAsync(call.Name, canonicalArgs).ConfigureAwait(false);
+                        return await approvalStore.IsApprovedAsync(call.Name, call.Arguments).ConfigureAwait(false);
                     },
+
+                    // send_self_email is structurally owner-only (recipient fixed in code), so it is
+                    // auto-approved outright — no prompt and no stored rule needed. Honor the floor
+                    // defensively: if it were ever added to the human-only set, stop auto-approving it.
+                    // NOTE: this code predicate does not write the approval audit log; because this tool is
+                    // auto-sent, EmailTools itself records every send to working/email-send.log for accountability.
+                    ctx => string.Equals(ctx.FunctionCallContent.Name, "send_self_email", StringComparison.Ordinal) is true
+                        ? new ValueTask<bool>(humanOnlyPolicy.IsPersistable("send_self_email"))
+                        : new ValueTask<bool>(false),
                 ],
             },
 
@@ -421,6 +563,29 @@ internal static class Program
                         (string note) => $"Recorded: {note}",
                         "record_note",
                         "Records a short note for the user. Requires approval.")),
+
+                    // Two email tools, both real app-only Microsoft Graph sends (see EmailTools). The recipient
+                    // split is what carries the security model.
+                    //
+                    // send_email(to, subject, body): sends to an ARBITRARY recipient. On the human-only floor
+                    // (see humanOnlyPolicy above), so it can never be auto-approved or remembered — it prompts
+                    // for a fresh human decision on every send.
+                    new ApprovalRequiredAIFunction(AIFunctionFactory.Create(
+                        (string to, string subject, string body, CancellationToken cancellationToken)
+                            => emailTools.SendEmailAsync(to, subject, body, cancellationToken),
+                        "send_email",
+                        "Sends an email to any recipient (recipient, subject, body). Requires approval every time.")),
+
+                    // send_self_email(subject, body): sends ONLY to the owner. The recipient is fixed from
+                    // configuration (Email:SenderAddress) inside EmailTools, so it is NOT a model-visible
+                    // argument — the model supplies only subject and body and the tool is structurally
+                    // incapable of emailing anyone else. Auto-approved (see AutoApprovalRules), so it never
+                    // prompts; EmailTools records each send to the send log for accountability.
+                    new ApprovalRequiredAIFunction(AIFunctionFactory.Create(
+                        (string subject, string body, CancellationToken cancellationToken)
+                            => emailTools.SendSelfEmailAsync(subject, body, cancellationToken),
+                        "send_self_email",
+                        "Sends a message to the owner (the user) themselves — a summary, reminder, or notification. Takes no recipient; can only reach the owner.")),
                     AIFunctionFactory.Create(
                         AgenticPlanningTools.CreatePlan,
                         name: "create_plan",
@@ -450,18 +615,19 @@ internal static class Program
 
         // Durable "one context" store. Replaces the in-memory store so the single context survives
         // restarts. MyAgentSessionStore routes every request to one fixed context (ignoring the client
-        // threadId) and persists it as a
-        // serialized session snapshot, atomically (temp-then-rename) under a single-writer guard.
+        // threadId) and persists it as a serialized session snapshot, atomically, under a single-writer
+        // guard.
         //
-        // Storage is behind a swappable ISnapshotStore: FileSnapshotStore writes readable JSON into an
-        // app-relative context/ dir
-        // in dev, machine-owned and kept OUT of the user-editable working/ store. The cloud end-state
-        // swaps in a blob-backed ISnapshotStore here (the only line that changes per environment).
+        // Storage is behind a swappable ISnapshotStore, chosen by the same backend flag as the working store
+        // above: FileSnapshotStore writes readable JSON into an app-relative context/ dir for local dev,
+        // machine-owned and kept OUT of the user-editable working/ store; BlobSnapshotStore persists to
+        // Azure Blob (its own container on the shared client) for the cloud end-state. The default is the
+        // FILE backend, so a local run with no extra config is unchanged.
         //
         // withIsolation:false is the single-user setting — isolation is the multi-user knob and is a
         // hard requirement for any exposed/multi-user deployment (see SERVER-SECURITY-NOTES.md).
-        string contextDir = Path.Combine(AppContext.BaseDirectory, "context");
-        var durableSessionStore = new MyAgentSessionStore(new FileSnapshotStore(contextDir));
+        ISnapshotStore snapshotStore = storage.SnapshotStore;
+        var durableSessionStore = new MyAgentSessionStore(snapshotStore);
         hostedAgent.WithSessionStore(durableSessionStore, withIsolation: false);
 
         // DESIGN TRIP-WIRE — stale-conversation recovery is intentionally NOT composed here yet. The
@@ -481,7 +647,7 @@ internal static class Program
                 new StreamErrorLoggingAgent(baseAgent, diagnosticLoggerFactory.CreateLogger<StreamErrorLoggingAgent>()),
                 jsonOptions),
             baseAgent,
-            historyProvider,
+            new DurableHistoryReader(snapshotStore),
             durableSessionStore,
             approvalStore,
             humanOnlyPolicy);
@@ -489,7 +655,7 @@ internal static class Program
 
     private static IChatClient CreateOpenRouterChatClient(WebApplicationBuilder builder)
     {
-        var credential = builder.Configuration["OPENROUTER_API_KEY"];
+        var credential = builder.Configuration["MuseLite:OPENROUTER_API_KEY"];
 
         if (credential is null)
         {
@@ -509,8 +675,10 @@ internal static class Program
 
     private static IChatClient CreateAzureOpenAIChatClient(WebApplicationBuilder builder)
     {
+        // FOUNDRY_PROJECT_ENDPOINT stays a plain env var: the Foundry Hosted Agents platform auto-injects it,
+        // so it is NOT namespaced under MuseLite:* / App Configuration. FOUNDRY_MODEL is ordinary app config.
         var endpoint = builder.Configuration["FOUNDRY_PROJECT_ENDPOINT"] ?? throw new InvalidOperationException("FOUNDRY_PROJECT_ENDPOINT is not set.");
-        var deploymentName = builder.Configuration["FOUNDRY_MODEL"] ?? "gpt-5.4";
+        var deploymentName = builder.Configuration["MuseLite:FOUNDRY_MODEL"] ?? "gpt-5.4";
 
         // Construct an IChatClient. Here we use a Microsoft Foundry project: the endpoint points at the
         // project, DefaultAzureCredential handles auth, and the deployment name selects the model.
@@ -542,135 +710,13 @@ internal static class Program
         return chatClient;
     }
 
-    // Projects the stored transcript to the minimal shape the chat UI paints: user and assistant text
-    // turns only. Tool-call / tool-result / system messages drive execution, not the transcript view, so
-    // they are skipped; an assistant turn carrying only a tool call (no text) is skipped too. The
-    // denied-approval marker shown on live turns is client-only display state that is never persisted, so
-    // it is intentionally not reconstructed here.
-    private static HistoryMessage[] ProjectToHistory(List<ChatMessage> messages)
-    {
-        var history = new List<HistoryMessage>(messages.Count);
-
-        // The show_images tool's result is stored in a tool-role message that sits between the assistant turn
-        // that called the tool and the assistant's text answer. Buffer any images seen since the last emitted
-        // turn and hang them on the next assistant text message, so a reopened client renders the gallery
-        // beneath the same answer it appeared under live. Mirrors the streaming path's attach logic.
-        var pendingImages = new List<ImageItem>();
-
-        foreach (ChatMessage message in messages)
-        {
-            if (message.Role == ChatRole.Tool)
-            {
-                CollectImagesFromToolResults(message, pendingImages);
-                continue;
-            }
-
-            string role;
-            if (message.Role == ChatRole.User)
-            {
-                role = "user";
-            }
-            else if (message.Role == ChatRole.Assistant)
-            {
-                role = "assistant";
-            }
-            else
-            {
-                continue;
-            }
-
-            string text = message.Text;
-            if (string.IsNullOrWhiteSpace(text) is true)
-            {
-                continue;
-            }
-
-            ImageResult? images = null;
-            if (message.Role == ChatRole.Assistant && pendingImages.Count > 0)
-            {
-                images = new ImageResult { Images = [.. pendingImages] };
-                pendingImages.Clear();
-            }
-
-            history.Add(new HistoryMessage(role, text, images));
-        }
-
-        return [.. history];
-    }
-
-    // Pulls any show_images results out of a stored tool-role message and appends their images to the sink,
-    // to be attached to the following assistant answer by ProjectToHistory. An image result is a JSON object
-    // with an "images" array — distinct from the plan snapshot ("steps") and the plan delta (a bare array)
-    // and from plain-string tool results — so it is recognized the same way the streaming path recognizes it.
-    private static void CollectImagesFromToolResults(ChatMessage message, List<ImageItem> sink)
-    {
-        foreach (AIContent content in message.Contents)
-        {
-            if (content is not FunctionResultContent functionResult)
-            {
-                continue;
-            }
-
-            string? json = functionResult.Result switch
-            {
-                string s => s,
-                JsonElement je => je.GetRawText(),
-                _ => functionResult.Result?.ToString()
-            };
-
-            if (string.IsNullOrWhiteSpace(json) is true)
-            {
-                continue;
-            }
-
-            // Only an image result is object-shaped; skip arrays/strings without parsing.
-            ReadOnlySpan<char> jsonSpan = json.AsSpan().TrimStart();
-            if (jsonSpan.IsEmpty || jsonSpan[0] != '{')
-            {
-                continue;
-            }
-
-            try
-            {
-                using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.ValueKind != JsonValueKind.Object
-                    || doc.RootElement.TryGetProperty("images", out _) is false)
-                {
-                    continue;
-                }
-
-                ImageResult? result = JsonSerializer.Deserialize(
-                    json,
-                    AGUIDojoServerSerializerContext.Default.ImageResult);
-                if (result is { Images.Count: > 0 })
-                {
-                    sink.AddRange(result.Images);
-                }
-            }
-            catch (JsonException)
-            {
-                // Not a well-formed image result — skip it; hydration still returns the assistant's text.
-            }
-        }
-    }
-
-    // Minimal display projection of one stored message, returned by the /history hydration endpoint. The
-    // chat UI renders user and assistant text turns, plus any inline image gallery the show_images tool
-    // produced for an assistant answer (reconstructed from the stored tool result so a reopened client shows
-    // the pictures, not just the text). Serialized as camelCase ({role, text, images?}); images is omitted
-    // when the turn has none.
-    private sealed record HistoryMessage(
-        string Role,
-        string Text,
-        [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ImageResult? Images = null);
-
-    // Bundles what Main needs after CreateAgenticUI builds the agent: the AG-UI agent to map, plus the
-    // pieces the /history hydration endpoint reads from — the base agent (to load the session), the
-    // history provider (to read its messages), and the durable session store.
+    // Bundles what Main needs after CreateAgenticUI builds the agent: the AG-UI agent to map, the base agent
+    // (for the reset endpoint's session delete) and durable session store, the shared history reader the
+    // /history endpoint delegates to, and the approval store + human-only policy for the approvals endpoint.
     private sealed record AssistantServer(
         AgenticUIAgent Agent,
         AIAgent BaseAgent,
-        InMemoryChatHistoryProvider HistoryProvider,
+        DurableHistoryReader HistoryReader,
         MyAgentSessionStore SessionStore,
         ApprovalRuleStore ApprovalStore,
         HumanOnlyPolicy HumanOnlyPolicy);

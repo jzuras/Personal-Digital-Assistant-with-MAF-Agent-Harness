@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace MyAssistantServer.AgenticUI;
+namespace MuseLite.AgenticUI;
 
 /// <summary>
 /// The full plan state produced by the <c>create_plan</c> tool and sent to the client as a state

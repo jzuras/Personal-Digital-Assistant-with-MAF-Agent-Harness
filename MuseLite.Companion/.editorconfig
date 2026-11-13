@@ -1,0 +1,33 @@
+# Analyzer overrides for MuseLite.Companion.
+# Seeded from the MuseLite server's app baseline (itself from the nuget-audit reference). root = false so
+# it inherits any ancestor .editorconfig higher in the directory tree on dev machines; build-critical rules are
+# duplicated here so the public-repo build is self-contained.
+#
+# This is an APP (ASP.NET Core minimal API), so the app-oriented suppressions apply: CA2007 (no sync
+# context → ConfigureAwait is noise) and CS1591 (public XML docs not required for an app entry point).
+root = false
+
+[*.cs]
+# Remove unnecessary using directives (needs GenerateDocumentationFile=true, set in the .csproj).
+dotnet_diagnostic.IDE0005.severity = error
+
+# Duplicate-using detection — belt-and-suspenders alongside IDE0005.
+dotnet_diagnostic.CS8933.severity = error
+
+# S1125: "Remove unnecessary boolean literal" contradicts the `is true`/`is false` pattern style the
+# global config enforces; the cases it would legitimately catch are already build errors via IDE0019.
+dotnet_diagnostic.S1125.severity = none
+
+# CA2007: ConfigureAwait(false) not required — ASP.NET Core has no synchronization context to capture.
+dotnet_diagnostic.CA2007.severity = none
+
+# CS1591: public members of an application host do not require XML doc comments (GenerateDocumentationFile
+# is on only to activate IDE0005 at build time).
+dotnet_diagnostic.CS1591.severity = none
+
+# Project-level glob: obj/ is directly under this .editorconfig, so NO leading **/. Mark SDK-generated
+# files (AssemblyInfo, GlobalUsings, etc.) as generated so analyzers skip them, and silence the CS8933
+# their `using System;` trips against the implicit global using.
+[obj/**/*.cs]
+generated_code = true
+dotnet_diagnostic.CS8933.severity = none

@@ -1,4 +1,4 @@
-ï»¿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -7,17 +7,33 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!-- Build-time enforcement (mirrors MuseLite.UI + the nuget-audit reference); see the
+       MyAssistant.ApprovalPolicy csproj for the per-property rationale. Applies to THIS project's own
+       source only — the referenced Harness_Shared_Console* sample projects are not enforced. -->
+  <PropertyGroup>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <AnalysisMode>All</AnalysisMode>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.35.0.4138" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" PrivateAssets="all" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
-    <PackageReference Include="Microsoft.Agents.AI.Foundry" Version="1.24.0-preview.261006.1" />
-    <PackageReference Include="Microsoft.Agents.AI.Harness" Version="1.24.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Agents.AI.Foundry" Version="1.27.0-preview.261030.1" />
+    <PackageReference Include="Microsoft.Agents.AI.Harness" Version="1.27.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.14" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Harness_Shared_Console\Harness_Shared_Console.csproj" />
     <ProjectReference Include="..\Harness_Shared_Console_OpenAI\Harness_Shared_Console_OpenAI.csproj" />
-    <ProjectReference Include="..\MyAssistant.ApprovalPolicy\MyAssistant.ApprovalPolicy.csproj" />
+    <ProjectReference Include="..\MuseLite.ApprovalPolicy\MuseLite.ApprovalPolicy.csproj" />
   </ItemGroup>
 
   <ItemGroup>

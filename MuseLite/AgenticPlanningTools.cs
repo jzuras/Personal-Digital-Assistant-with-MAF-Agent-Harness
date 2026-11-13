@@ -1,6 +1,6 @@
 using System.ComponentModel;
 
-namespace MyAssistantServer.AgenticUI;
+namespace MuseLite.AgenticUI;
 
 /// <summary>
 /// Agentic-UI planning tools. The model calls these to drive the client's Task Progress card: the data

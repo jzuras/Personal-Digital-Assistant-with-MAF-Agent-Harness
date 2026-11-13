@@ -1,5 +1,3 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-
 using System.ComponentModel;
 using Microsoft.Extensions.AI;
 
@@ -16,11 +14,11 @@ internal static class StockTools
 {
     // <stock_quote>
     /// <summary>A delayed, illustrative stock quote.</summary>
-    public sealed record StockQuote(string Symbol, decimal Price, string Currency, DateTimeOffset AsOf);
+    internal sealed record StockQuote(string Symbol, decimal Price, string Currency, DateTimeOffset AsOf);
     // </stock_quote>
 
     // A tiny in-memory price book so the sample runs without any external dependency.
-    private static readonly Dictionary<string, decimal> s_priceBook = new(StringComparer.OrdinalIgnoreCase)
+    private static Dictionary<string, decimal> PriceBook { get; } = new(StringComparer.OrdinalIgnoreCase)
     {
         ["MSFT"] = 462.97m,
         ["AAPL"] = 229.35m,
@@ -38,7 +36,7 @@ internal static class StockTools
     public static StockQuote GetStockPrice(
         [Description("The stock ticker symbol, e.g. MSFT or AAPL.")] string symbol)
     {
-        if (!s_priceBook.TryGetValue(symbol, out var price))
+        if (PriceBook.TryGetValue(symbol, out var price) is false)
         {
             // Deterministic pseudo-price for unknown symbols so the sample stays self-contained.
             // Derive a stable seed from the characters — string.GetHashCode() is randomized per

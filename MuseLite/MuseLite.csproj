@@ -17,13 +17,10 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
-  <!-- Analyzers. SonarAnalyzer.CSharp + MS Threading are public NuGet (portable); JczLLC.Analyzers.CodingStandards
-       is Jim's OWN analyzer via a LOCAL cross-repo project ref — strip it when copying to public (see CLAUDE.md). -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Configuration.AzureAppConfiguration" Version="8.6.1" />
     <PackageReference Include="SonarAnalyzer.CSharp" Version="10.35.0.4138" PrivateAssets="all" />
     <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" PrivateAssets="all" />
-    <ProjectReference Include="..\..\Analyzers\CodingStandards\src\JczLLC.Analyzers.CodingStandards\JczLLC.Analyzers.CodingStandards.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" Condition="Exists('..\..\Analyzers\CodingStandards\src\JczLLC.Analyzers.CodingStandards\JczLLC.Analyzers.CodingStandards.csproj')" />
   </ItemGroup>
 
   <ItemGroup>

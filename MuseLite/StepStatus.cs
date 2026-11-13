@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace MyAssistantServer.AgenticUI;
+namespace MuseLite.AgenticUI;
 
 /// <summary>
 /// Status of a plan <see cref="Step"/>. Serialized lowercase (<c>"pending"</c> / <c>"completed"</c>) to

@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace MyAssistantServer.AgenticUI;
+namespace MuseLite.AgenticUI;
 
 /// <summary>
 /// A single RFC 6902 JSON Patch operation emitted by the <c>update_plan_step</c> tool as an incremental

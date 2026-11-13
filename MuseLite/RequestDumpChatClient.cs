@@ -2,12 +2,12 @@ using System.Globalization;
 using System.Text;
 using Microsoft.Extensions.AI;
 
-namespace MyAssistantServer.AgenticUI;
+namespace MuseLite.AgenticUI;
 
 /// <summary>
 /// Debug-level diagnostic that logs the full outbound message history (roles + content kinds) immediately
 /// before it is sent to the model. Off by default; enable by raising this category to <c>Debug</c> in the
-/// Logging configuration (e.g. <c>"MyAssistantServer.AgenticUI": "Debug"</c>). Sits at the bottom of the
+/// Logging configuration (e.g. <c>"MuseLite.AgenticUI": "Debug"</c>). Sits at the bottom of the
 /// harness chat-client stack, so it shows the final assembled request — useful for diagnosing Responses-API
 /// payload problems under client-managed history, where the whole transcript is replayed each turn.
 /// </summary>

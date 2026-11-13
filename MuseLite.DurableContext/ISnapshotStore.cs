@@ -38,7 +38,7 @@ public interface ISnapshotStore
     /// </summary>
     /// <remarks>
     /// This primitive backs the memory-preserving "new conversation" reset: the server's
-    /// <c>POST /my_assistant/reset</c> endpoint calls it through
+    /// <c>POST /invocations/reset</c> endpoint calls it through
     /// <see cref="MyAgentSessionStore.DeleteSessionAsync"/> (the framework's session-delete contract
     /// archives via this method) to retire the current context and start an empty one, while the
     /// user-editable memory files are a separate store left untouched. Archiving rather than

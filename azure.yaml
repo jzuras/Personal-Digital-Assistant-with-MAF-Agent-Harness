@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+#
+# Deploys MuseLite (the server) as an Azure AI Foundry Hosted Agent in CONTAINER mode (a Dockerfile built
+# remotely in ACR — no local Docker), speaking AG-UI over the Foundry invocations protocol. Container mode
+# is required because this is a multi-project app (server + two sibling class libraries): code-mode
+# remote_build ships only the single service folder and cannot see the libraries. See the Dockerfile.
+# Full deploy playbook + error->fix map: FOUNDRY-HOSTED-DEPLOYMENT-LEARNINGS.html.
+#
+# BEFORE DEPLOY (not in this file): the MuseLite:* app config + secrets must exist in Azure App
+# Configuration (see the checklist handed off in SESSION / the chat), and the hosted agent's managed
+# identity — created at deploy time — needs the App Configuration Data Reader and Storage Blob Data
+# Contributor data-plane roles granted afterward.
+
+requiredVersions:
+    extensions:
+        azure.ai.agents: '>=1.0.0-beta.20'
+
+name: muselite
+
+services:
+    ai-project:
+        host: azure.ai.project
+        # The EXISTING Foundry project to deploy into: its AI Foundry API endpoint
+        # (…services.ai.azure.com/api/projects/<project>), NOT the account's cognitiveservices endpoint.
+        # SENSITIVE (reveals resource/account naming) — keep as a placeholder in the PUBLIC copy; fill the
+        # real value in your local working copy (uncommitted), or set it (plus AZURE_AI_PROJECT_ID) via
+        # `azd env set` as the learnings doc describes.
+        endpoint: <your-foundry-project-endpoint>
+
+    muselite:
+        project: .
+        host: azure.ai.agent
+        language: docker
+        uses:
+            - ai-project
+        # Container mode: build the image from the repo root so the Dockerfile can reach the sibling
+        # library projects. remoteBuild builds in ACR (no local Docker). The Dockerfile owns the port
+        # (:8088) and entrypoint (dotnet MuseLite.dll).
+        docker:
+            path: ./Dockerfile
+            context: .
+            remoteBuild: true
+        container:
+            resources:
+                cpu: "0.5"
+                memory: 1Gi
+        description: MuseLite — a durable personal assistant (Microsoft Agent Framework) exposed over AG-UI via the Foundry invocations protocol. Config + secrets come from Azure App Configuration (MuseLite:*); durable state is in external Azure Blob (keyless).
+        displayName: MuseLite
+        environmentVariables:
+            # (ASPNETCORE_URLS is set in the Dockerfile in container mode, not here.)
+            # Azure App Configuration endpoint (keyless bootstrap): the app reads all MuseLite:* config from
+            # here using the agent's managed identity. This is the ONE config value that cannot itself come
+            # from App Config. `__` is the .NET config separator for `AppConfig:Endpoint`.
+            # SENSITIVE (reveals the store name) — keep as a placeholder in the PUBLIC copy.
+            - name: AppConfig__Endpoint
+              value: <your-app-config-endpoint>   # e.g. https://<store>.azconfig.io
+            # Durable-storage backend. MUST be Blob in the cloud: if omitted the app SILENTLY defaults to File
+            # and writes to the container's ephemeral disk (lost on restart) — no crash, which is worse.
+            - name: DurableContext__Backend
+              value: Blob
+            # NOT set here (by design): FOUNDRY_MODEL (now MuseLite:FOUNDRY_MODEL in App Config),
+            # FOUNDRY_PROJECT_ENDPOINT (auto-injected by the platform), and any App Config connection string
+            # (its absence is what makes the app take the keyless endpoint+managed-identity path).
+        kind: hosted
+        metadata:
+            tags:
+                - AI Agent Hosting
+                - Invocations Protocol
+                - Agent Framework
+                - .NET
+        name: muselite
+        protocols:
+            - protocol: invocations
+              version: 2.0.0
+
+# No `deployments:` block: the model already exists in the shared project. Declaring it would let azd
+# reconcile (and possibly resize / strip the RAI policy of) that shared deployment. The agent references
+# the model by name via MuseLite:FOUNDRY_MODEL (App Config) on the Azure path.
+infra:
+    provider: microsoft.foundry

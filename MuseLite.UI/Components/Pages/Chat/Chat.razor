@@ -15,7 +15,7 @@
             <span class="header-hint">Ask the agent to plan or execute a multi-step task</span>
         </div>
         <div class="header-actions">
-            <button class="new-conversation" @onclick="ShowResetConfirm" disabled="@ConnectionPending">New conversation</button>
+            <button class="new-conversation" @onclick="ShowResetConfirm" disabled="@ResetBlocked" title="@NewConversationDisabledReason">New conversation</button>
         </div>
     </div>
 </header>
@@ -55,7 +55,7 @@
             </span>
         </div>
         <div class="reset-actions">
-            <button class="reset-confirm" @onclick="NewConversationAsync">Start new</button>
+            <button class="reset-confirm" @onclick="NewConversationAsync" disabled="@ResetBlocked" title="@NewConversationDisabledReason">Start new</button>
             <button class="reset-cancel" @onclick="CancelResetConfirm">Cancel</button>
         </div>
     </div>
@@ -112,7 +112,7 @@
         {
             <div class="approval-actions">
                 <button class="approval-approve" @onclick="() => RespondToApprovalAsync(true)">Approve once</button>
-                <button class="approval-always" @onclick="ShowRememberConfirm">Always approve</button>
+                <button class="approval-always" @onclick="ShowRememberConfirm" disabled="@CompanionUnavailable" title="@AlwaysApproveDisabledReason">Always approve</button>
                 <button class="approval-deny" @onclick="() => RespondToApprovalAsync(false)">Deny</button>
             </div>
         }
@@ -120,5 +120,5 @@
 }
 
 <div class="chat-container">
-    <ChatInput OnSend="@AddUserMessageAsync" @ref="@ChatInput" Disabled="@ConnectionPending" />
+    <ChatInput OnSend="@AddUserMessageAsync" @ref="@ChatInput" Disabled="@(ConnectionPending || ResetInFlight)" />
 </div>

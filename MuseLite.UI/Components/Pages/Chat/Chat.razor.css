@@ -146,6 +146,19 @@
     color: #3a4576;
 }
 
+/* Disabled "Start new" while a response is streaming or a reset is already in flight. Scoped under
+   .reset-actions so it outranks the `.reset-actions button` base rule (which carries an element selector,
+   so a bare `.reset-confirm:disabled` would lose the cascade and never override `cursor: pointer`). Cancel
+   is intentionally NOT disabled — the card must always be dismissable. */
+.reset-actions .reset-confirm:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+    .reset-actions .reset-confirm:disabled:hover {
+        filter: none;
+    }
+
 /* Connection status banner — shown while the agent server is unreachable (e.g. not started yet in dev) */
 .connection-panel {
     display: flex;
@@ -319,6 +332,18 @@
         .approval-actions button:hover {
             filter: brightness(1.08);
         }
+
+        /* Disabled "Always approve" — shown muted when the companion service (which stores the standing
+           grant) is unreachable; the user can still approve once. Scoped with :disabled so (0,2,1) outranks
+           the (0,1,1) base rule, and :disabled:hover neutralises the base hover brightness. */
+        .approval-actions button:disabled {
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+
+            .approval-actions button:disabled:hover {
+                filter: none;
+            }
 
 .approval-approve {
     background: #0a6b4f;

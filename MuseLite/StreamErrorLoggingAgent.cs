@@ -2,7 +2,7 @@ using System.Runtime.CompilerServices;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 
-namespace MyAssistantServer.AgenticUI;
+namespace MuseLite.AgenticUI;
 
 /// <summary>
 /// Debug-level diagnostic that surfaces the real cause of a streaming failure. The AG-UI hosting layer
@@ -11,7 +11,7 @@ namespace MyAssistantServer.AgenticUI;
 /// underlying cause on the server. Wrapping the base agent from the inside, this logs the real exception
 /// (and any <see cref="ErrorContent"/> that arrives as a normal update) before the host swallows it, then
 /// rethrows so behavior is unchanged. Off by default; enable by raising this category to <c>Debug</c> in
-/// the Logging configuration (e.g. <c>"MyAssistantServer.AgenticUI": "Debug"</c>).
+/// the Logging configuration (e.g. <c>"MuseLite.AgenticUI": "Debug"</c>).
 /// </summary>
 internal sealed class StreamErrorLoggingAgent : DelegatingAIAgent
 {

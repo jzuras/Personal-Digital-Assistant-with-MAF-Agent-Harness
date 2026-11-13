@@ -12,11 +12,21 @@ namespace MyAssistant.ApprovalPolicy;
 /// <remarks>
 /// This is a semantics-blind stand-in for Muse/Dots' hardcoded "purchases are never
 /// auto-approvable" class: rather than classifying actions, we rely on the tool author to
-/// list a tool here (next to its <c>requireApproval</c> gating). The set is empty for now
-/// because no money/credential tool exists yet.
+/// list a tool here (next to its <c>requireApproval</c> gating). The application's standing
+/// floor is <see cref="CreateDefault"/>; the list-taking constructor stays for tests and for
+/// consumers that want a custom floor.
 /// </remarks>
 public sealed class HumanOnlyPolicy
 {
+    /// <summary>
+    /// Gets the application's default human-only floor: the tool names that must always be a
+    /// fresh human decision and can never receive a durable grant. Centralized here so every
+    /// write entry point that can persist a standing grant (the agent server and the companion
+    /// app each expose one) enforces the identical floor — a divergence between them could let one
+    /// process persist a grant the other refuses. Add a tool here when it becomes non-persistable.
+    /// </summary>
+    private static IReadOnlyList<string> DefaultFloorTools { get; } = ["send_email"];
+
     /// <summary>
     /// Gets the set of tool names that can never receive a durable approval.
     /// </summary>
@@ -32,6 +42,17 @@ public sealed class HumanOnlyPolicy
         this.NonPersistableTools = humanOnlyToolNames is null
             ? new HashSet<string>(StringComparer.Ordinal)
             : new HashSet<string>(humanOnlyToolNames, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Creates a policy carrying the application's standing human-only floor
+    /// (<see cref="DefaultFloorTools"/>). Call sites that want the canonical floor use this instead
+    /// of spelling the list out, so the floor lives in exactly one place.
+    /// </summary>
+    /// <returns>A policy whose floor is the application default.</returns>
+    public static HumanOnlyPolicy CreateDefault()
+    {
+        return new HumanOnlyPolicy(HumanOnlyPolicy.DefaultFloorTools);
     }
 
     /// <summary>

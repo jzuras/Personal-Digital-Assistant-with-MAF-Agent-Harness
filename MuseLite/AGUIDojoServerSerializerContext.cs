@@ -1,7 +1,8 @@
 using System.Text.Json.Serialization;
-using MyAssistantServer.AgenticUI;
+using MuseLite.AgenticUI;
+using MyAssistant.DurableContext;
 
-namespace MyAssistantServer;
+namespace MuseLite;
 
 [JsonSerializable(typeof(List<string>))]
 [JsonSerializable(typeof(Plan))]

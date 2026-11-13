@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Agents.AI" Version="1.26.0" />
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.27.0" />
     <PackageReference Include="OpenTelemetry" Version="1.20.1" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.20.1" />
   </ItemGroup>
@@ -16,8 +16,8 @@
   <ItemGroup>
     <ProjectReference Include="..\ConsoleReactiveComponents\ConsoleReactiveComponents.csproj" />
     <ProjectReference Include="..\ConsoleReactiveFramework\ConsoleReactiveFramework.csproj" />
-    <ProjectReference Include="..\MyAssistant.ApprovalPolicy\MyAssistant.ApprovalPolicy.csproj" />
-    <ProjectReference Include="..\MyAssistant.DurableContext\MyAssistant.DurableContext.csproj" />
+    <ProjectReference Include="..\MuseLite.ApprovalPolicy\MuseLite.ApprovalPolicy.csproj" />
+    <ProjectReference Include="..\MuseLite.DurableContext\MuseLite.DurableContext.csproj" />
   </ItemGroup>
 
 </Project>

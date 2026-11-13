@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace MyAssistantServer.AgenticUI;
+namespace MuseLite.AgenticUI;
 
 /// <summary>
 /// One step in a <see cref="Plan"/>. The client mirrors this shape (property names <c>description</c> and

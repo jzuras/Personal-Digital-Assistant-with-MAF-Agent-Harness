@@ -1,6 +1,6 @@
 # Analyzer overrides for MyAssistant.DurableContext.
 # Seeded from the nuget-audit reference baseline (the canonical triaged suppression set). root = false so
-# it inherits Jim's global C:\Users\Jim\source\.editorconfig on dev machines; build-critical rules are
+# it inherits any ancestor .editorconfig higher in the directory tree on dev machines; build-critical rules are
 # duplicated here so the public-repo build is self-contained.
 #
 # NOTE (triage): this is a LIBRARY, so CA2007 (ConfigureAwait) is intentionally NOT suppressed — the

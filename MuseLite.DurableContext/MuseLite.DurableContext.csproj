@@ -23,8 +23,35 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <!--
+    Framework-agnostic durable-context building blocks, shared by the console and the server.
+    Depends only on Microsoft.Agents.AI[.Abstractions],
+    never on the console UI shell or on hosting. Versioned to 1.25.0 to match the server stack;
+    this transitively moves the console off its direct 1.23.0 reference.
+    Home for SessionRecovery now, and (later slices) MyAgentSessionStore + SessionRecoveringAgent.
+  -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.Agents.AI" Version="1.26.0" />
+    <PackageReference Include="Microsoft.Agents.AI" Version="1.27.0" />
+    <!-- DurableHistoryReader builds a throwaway dummy-client harness agent to deserialize a session and read
+         its transcript (no model). AsHarnessAgent + InMemoryChatHistoryProvider live here. Pinned to match the
+         server stack (1.27.0); this also forces Microsoft.Agents.AI to 1.27.0 above. -->
+    <PackageReference Include="Microsoft.Agents.AI.Harness" Version="1.27.0" />
+    <!-- Azure Blob backend for the durable stores (BlobSnapshotStore / BlobPolicyTextStore /
+         BlobAgentFileStore). -->
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.29.2" />
+    <!-- DurableStorage composes the stores from configuration (shared by the chat server and the
+         companion app, so backend selection and key layout cannot drift between processes). It owns
+         the keyless DefaultAzureCredential path, hence the Azure.Identity reference; the
+         Configuration.Abstractions pin matches the version already in this project's transitive graph. -->
+    <PackageReference Include="Azure.Identity" Version="1.21.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The policy store contract (IPolicyTextStore) that BlobPolicyTextStore implements and
+         DurableStorage selects. MuseLite.ApprovalPolicy stays zero-external-dependency; the
+         storage-SDK-backed implementation lives here instead. -->
+    <ProjectReference Include="..\MuseLite.ApprovalPolicy\MuseLite.ApprovalPolicy.csproj" />
   </ItemGroup>
 
   <ItemGroup>
