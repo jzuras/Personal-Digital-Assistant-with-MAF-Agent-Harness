@@ -29,14 +29,14 @@ namespace MyAssistant.DurableContext;
 ///   current blob still holding the complete prior snapshot, so no generation is lost.</description></item>
 /// </list>
 /// <para>
-/// Cross-process concurrency: a second writer now exists — the companion app archives the context
-/// (<see cref="ArchiveAsync"/>) in its own process while the server rewrites the snapshot every turn.
-/// <see cref="ArchiveAsync"/> is guarded with an ETag <c>If-Match</c> so it never deletes a snapshot the
-/// server wrote after the archiver read it (a precondition failure surfaces as
-/// <see cref="SnapshotConcurrencyException"/>). <see cref="WriteAsync"/> is still unguarded across
-/// processes: the server is its only writer and the in-process single-writer guard in
-/// <see cref="MyAgentSessionStore"/> covers it. A future second <em>writer</em> (e.g. a scheduled job
-/// that reads-modifies-writes the context) would need the same precondition on the write path. See
+/// Cross-process concurrency: <see cref="ArchiveAsync"/> is guarded with an ETag <c>If-Match</c> so an
+/// out-of-process archiver can never delete a snapshot that another writer replaced after the archiver read
+/// it (a precondition failure surfaces as <see cref="SnapshotConcurrencyException"/>). Today the archive
+/// (the "new conversation" reset) runs in the SERVER process, so the in-process single-writer guard in
+/// <see cref="MyAgentSessionStore"/> already serializes it against the per-turn snapshot write; the ETag
+/// guard is a backstop that keeps this correct if an out-of-process writer is ever added (e.g. a scheduled
+/// job that reads-modifies-writes the context). <see cref="WriteAsync"/> is unguarded across processes for
+/// the same reason — the server is its only writer, covered by that same in-process guard. See
 /// SERVER-SECURITY-NOTES.md.
 /// </para>
 /// </remarks>

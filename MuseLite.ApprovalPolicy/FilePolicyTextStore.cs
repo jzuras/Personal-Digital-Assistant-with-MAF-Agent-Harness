@@ -1,7 +1,7 @@
 namespace MyAssistant.ApprovalPolicy;
 
 /// <summary>
-/// Local-filesystem <see cref="IPolicyTextStore"/>: the dev/console backend that keeps the policy
+/// Local-filesystem <see cref="IPolicyTextStore"/>: the dev backend that keeps the policy
 /// artifacts as plain files under a dedicated directory (kept separate from the agent's file-access
 /// store, so the agent cannot read or alter its own approval rules and audit trail). The cloud
 /// end-state swaps in a blob-backed implementation of the same interface.

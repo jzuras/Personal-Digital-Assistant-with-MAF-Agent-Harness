@@ -333,8 +333,8 @@
             filter: brightness(1.08);
         }
 
-        /* Disabled "Always approve" — shown muted when the companion service (which stores the standing
-           grant) is unreachable; the user can still approve once. Scoped with :disabled so (0,2,1) outranks
+        /* Disabled "Always approve" — shown muted when the custom operations (which store the standing
+           grant) are unreachable; the user can still approve once. Scoped with :disabled so (0,2,1) outranks
            the (0,1,1) base rule, and :disabled:hover neutralises the base hover brightness. */
         .approval-actions button:disabled {
             cursor: not-allowed;

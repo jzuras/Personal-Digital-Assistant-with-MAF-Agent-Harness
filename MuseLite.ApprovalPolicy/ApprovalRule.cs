@@ -30,7 +30,7 @@ namespace MyAssistant.ApprovalPolicy;
 public sealed record ApprovalRule
 {
     /// <summary>
-    /// Gets the registered tool name this grant applies to (e.g. <c>get_stock_price</c>).
+    /// Gets the registered tool name this grant applies to (e.g. <c>record_note</c>).
     /// Matches <c>FunctionCallContent.Name</c> seen by the auto-approval predicate.
     /// </summary>
     [JsonPropertyName("tool")]

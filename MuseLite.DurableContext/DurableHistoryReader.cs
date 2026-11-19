@@ -15,8 +15,8 @@ namespace MyAssistant.DurableContext;
 /// calls, so this reader drives them through a throwaway <em>dummy</em> <see cref="IChatClient"/> (no model,
 /// no API key). Only the history provider is needed to recover the transcript slice — verified against every
 /// local snapshot variety (2026-11-09 probe), including tool calls, web search, reasoning content, and a
-/// compaction-summarized conversation. This is what lets a companion process read history off shared storage
-/// without reconstructing the full agent or holding model credentials.
+/// compaction-summarized conversation. This is what lets the history operation read the transcript off
+/// shared storage without reconstructing the full agent or holding model credentials.
 /// </para>
 /// <para>
 /// A fresh dummy agent + history provider is built per call so no state bleeds between reads, and no

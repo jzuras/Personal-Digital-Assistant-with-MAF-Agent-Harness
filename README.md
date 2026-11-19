@@ -19,6 +19,7 @@ Each post builds on the last; the code here is the companion.
 - **My LinkedIn Post #4** — New Features Including Agentic UI. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7523184171528380416/))_
 - **My LinkedIn Post #5** — Hosting on Agent Service. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7526809981241704448/))_
 - **My LinkedIn Post #6** — Kludges Reconsidered. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7528571227892789248/))_
+- **My LinkedIn Post #7** — Kludge Removed, Anthropic Comparison. _([Click here](https://www.linkedin.com/feed/update/urn:li:activity:7529268344638672896/))_
 
 
 ## Status

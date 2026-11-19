@@ -46,23 +46,14 @@ internal static class Program
             agentHttpClient.AddHttpMessageHandler<AgentBearerTokenHandler>();
         }
 
-        // Separate client for the custom state operations (history / reset / approvals). These do NOT go to the
-        // chat agent: hosted, the Foundry gateway only proxies the AG-UI protocol path, so a companion app
-        // serves them directly over durable storage. For now CompanionBaseUrl points at the local server (which
-        // still maps those routes), so this is a no-op swap that is testable immediately; a later slice repoints
-        // it at the real companion. Anonymous for now (local target); companion auth is a later concern.
-        builder.Services.AddHttpClient("companion", client =>
-        {
-            var url = builder.Configuration["CompanionBaseUrl"] ?? "http://localhost:5152";
-            client.BaseAddress = new Uri(url);
-        });
-
         builder.Services.AddSingleton<AIAgent>(sp =>
         {
             var endpoint = builder.Configuration["AgentEndpoint"] ?? "invocations";
             // The hosted invocations path carries "?api-version=v1"; locally this is empty. Kept as a separate
-            // config value so it rides the chat endpoint without being baked into AgentEndpoint. Only CHAT uses
-            // it — the custom state calls go to the companion client, which is our own app and never needs it.
+            // config value so it rides the endpoint without being baked into AgentEndpoint. Both chat and the
+            // custom state operations (history / reset / approvals) use this same route on the "agent" client:
+            // the ops ride /invocations with an x-client-op header (the gateway-legal multiplex), so they
+            // inherit the bearer auth and the "?api-version=v1" query in every environment.
             var query = builder.Configuration["AgentEndpointQuery"] ?? string.Empty;
             var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient("agent");
             var chatClient = new AGUIChatClient(new(httpClient, endpoint + query));

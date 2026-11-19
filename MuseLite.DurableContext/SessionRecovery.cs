@@ -20,24 +20,25 @@ namespace MyAssistant.DurableContext;
 /// pointer; the next turn resends the local history and the service starts a fresh thread — lossless.
 /// <para>
 /// This type is deliberately host-agnostic (it takes an <see cref="AIAgent"/> and an
-/// <see cref="AgentSession"/> and returns a repaired session) so the same logic is reused by both
-/// the console host and the server host; only the per-host error-handling wiring differs. It lives
+/// <see cref="AgentSession"/> and returns a repaired session) so the same logic is reusable across
+/// hosts; only the per-host error-handling wiring differs. It lives
 /// in this shared <c>MyAssistant.DurableContext</c> library for that reason.
 /// </para>
 /// <para>
-/// DESIGN TRIP-WIRE — server-side use is intentionally DEFERRED. The console wires this into
-/// <c>HarnessAgentRunner</c> and reassigns
-/// its own <c>_session</c> field on recovery — trivial because the console owns the session. The
-/// server (AG-UI host) does NOT: it owns the session and saves it by reference, and the stale pointer
-/// is <c>ChatClientAgentSession.ConversationId</c> whose setter is <c>internal</c> (unreachable from
-/// this assembly; inheritance can't reach it, and it is not in <c>StateBag</c>). So the repaired
-/// session this method returns cannot be made to persist cross-turn on the server without reflection
-/// (rejected). Moreover the error cannot fire on the current OpenRouter provider (its
-/// <c>conversationId</c> is the local sentinel <c>_agent_local_chat_history</c>, not a server pointer
-/// that can 404), so a server-side fix is also unverifiable today. BUILD the server-side
+/// DESIGN TRIP-WIRE — server-side use is intentionally RETIRED on the current path, not merely
+/// deferred: both wired providers run client-managed history (<c>store=false</c>), which eliminates
+/// the stale-pointer (<c>previous_response_not_found</c>) failure class entirely — there is no error
+/// for a server-side recovery layer to recover from. It becomes relevant again ONLY if a stateful,
+/// server-side-history provider (<c>store=true</c>, holding history behind a <c>previous_response_id</c>
+/// / <c>conversationId</c> pointer) is ever wired. A host that holds its session in a plain mutable
+/// field can reassign that field to the repaired session on recovery — trivial because that host owns
+/// the session. The server (AG-UI host) could NOT do even that: it owns the session and saves it by
+/// reference, and the stale pointer is <c>ChatClientAgentSession.ConversationId</c> whose setter is
+/// <c>internal</c> (unreachable from this assembly; inheritance can't reach it, and it is not in
+/// <c>StateBag</c>), so a repaired session could not be made to persist cross-turn without reflection
+/// (rejected). If a stateful provider is ever wired, BUILD the server-side
 /// <c>SessionRecoveringAgent : DelegatingAIAgent</c> (override <c>RunCoreStreamingAsync</c>,
-/// advance-first) and verify it ONLY WHEN a stateful Azure/OpenAI Responses provider is wired on the
-/// server — the condition under which it can both fire and be tested.
+/// advance-first) and verify it then — the condition under which it can both fire and be tested.
 /// </para>
 /// </remarks>
 public static class SessionRecovery

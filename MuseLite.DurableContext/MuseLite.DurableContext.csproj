@@ -24,11 +24,10 @@
   </PropertyGroup>
 
   <!--
-    Framework-agnostic durable-context building blocks, shared by the console and the server.
-    Depends only on Microsoft.Agents.AI[.Abstractions],
-    never on the console UI shell or on hosting. Versioned to 1.25.0 to match the server stack;
-    this transitively moves the console off its direct 1.23.0 reference.
-    Home for SessionRecovery now, and (later slices) MyAgentSessionStore + SessionRecoveringAgent.
+    Framework-agnostic durable-context building blocks, shared across hosts. Depends only on
+    Microsoft.Agents.AI[.Abstractions], never on a UI shell or on hosting. Versioned to match
+    the server stack. Home for SessionRecovery now, and (later slices) MyAgentSessionStore +
+    SessionRecoveringAgent.
   -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Agents.AI" Version="1.27.0" />
@@ -39,10 +38,10 @@
     <!-- Azure Blob backend for the durable stores (BlobSnapshotStore / BlobPolicyTextStore /
          BlobAgentFileStore). -->
     <PackageReference Include="Azure.Storage.Blobs" Version="12.29.2" />
-    <!-- DurableStorage composes the stores from configuration (shared by the chat server and the
-         companion app, so backend selection and key layout cannot drift between processes). It owns
-         the keyless DefaultAzureCredential path, hence the Azure.Identity reference; the
-         Configuration.Abstractions pin matches the version already in this project's transitive graph. -->
+    <!-- DurableStorage composes the stores from configuration (shared by every process that touches the
+         durable state, so backend selection and key layout cannot drift between them). It owns the keyless
+         DefaultAzureCredential path, hence the Azure.Identity reference; the Configuration.Abstractions pin
+         matches the version already in this project's transitive graph. -->
     <PackageReference Include="Azure.Identity" Version="1.21.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.3" />
   </ItemGroup>

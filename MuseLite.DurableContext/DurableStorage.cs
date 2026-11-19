@@ -11,9 +11,8 @@ namespace MyAssistant.DurableContext;
 /// memory — from configuration, selected by the <c>DurableContext:Backend</c> flag: <c>File</c>
 /// (the default) keeps the fast local loop on the filesystem under <c>baseDirectory</c>;
 /// <c>Blob</c> routes all three to Azure Blob over one shared <see cref="BlobServiceClient"/>
-/// (separate containers). Shared by every process that touches the durable state — the chat
-/// server and the companion app — so the backend selection, the configuration-key layout, and
-/// the container/directory names cannot drift between them.
+/// (separate containers). Shared by every process that touches the durable state, so the backend
+/// selection, the configuration-key layout, and the container/directory names cannot drift between them.
 /// </summary>
 /// <remarks>
 /// <para>

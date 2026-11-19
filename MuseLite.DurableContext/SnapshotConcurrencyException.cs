@@ -7,10 +7,12 @@ namespace MyAssistant.DurableContext;
 /// should surface a retryable conflict rather than report a successful reset.
 /// </summary>
 /// <remarks>
-/// Backs the cross-process reset race: the agent server rewrites the session every turn in its own
-/// process, while the companion app archives in another. <see cref="BlobSnapshotStore"/> guards the
-/// delete with an ETag <c>If-Match</c>; a precondition failure surfaces here. The file backend runs
-/// where this race is handled by UI coordination instead, so it does not raise this.
+/// Backs a cross-process reset race: if an out-of-process archiver (e.g. a future scheduled job) ever
+/// archives the context while the server rewrites the session every turn, <see cref="BlobSnapshotStore"/>
+/// guards the delete with an ETag <c>If-Match</c> and a precondition failure surfaces here. In the normal
+/// path the reset archives in the server process, serialized against the per-turn write by the in-process
+/// single-writer guard. The file backend handles this race by UI coordination instead, so it never raises
+/// this.
 /// </remarks>
 public sealed class SnapshotConcurrencyException : Exception
 {

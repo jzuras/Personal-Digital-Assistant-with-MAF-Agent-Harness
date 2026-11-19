@@ -49,8 +49,8 @@
             <span class="reset-title">Start a new conversation?</span>
             <span class="reset-text">
                 This clears the <strong>current conversation</strong> and starts fresh. What the agent
-                knows about you is <strong>kept</strong>: your memory files (identity, preferences, memories,
-                watchlist) and your standing approvals are untouched. If you want to double-check first, you
+                knows about you is <strong>kept</strong>: your memory files (identity, preferences,
+                memories) and your standing approvals are untouched. If you want to double-check first, you
                 can open those files before resetting — nothing in them is lost.
             </span>
         </div>
@@ -112,7 +112,7 @@
         {
             <div class="approval-actions">
                 <button class="approval-approve" @onclick="() => RespondToApprovalAsync(true)">Approve once</button>
-                <button class="approval-always" @onclick="ShowRememberConfirm" disabled="@CompanionUnavailable" title="@AlwaysApproveDisabledReason">Always approve</button>
+                <button class="approval-always" @onclick="ShowRememberConfirm" disabled="@OperationsUnavailable" title="@AlwaysApproveDisabledReason">Always approve</button>
                 <button class="approval-deny" @onclick="() => RespondToApprovalAsync(false)">Deny</button>
             </div>
         }

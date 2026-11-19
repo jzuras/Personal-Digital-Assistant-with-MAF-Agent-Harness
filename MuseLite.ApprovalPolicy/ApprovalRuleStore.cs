@@ -13,8 +13,8 @@ namespace MyAssistant.ApprovalPolicy;
 /// </summary>
 /// <remarks>
 /// Rules are deliberately NOT cached: every operation loads the document fresh from the backing
-/// store, so a grant written by another process (the companion app persists grants from its own
-/// process) and a hand edit or revocation of the document both take effect on the very next gated
+/// store, so a grant written by another process
+/// and a hand edit or revocation of the document both take effect on the very next gated
 /// call — not at the next restart. The document is tiny and gated calls are rare, so the extra
 /// read is negligible. Within the process, all access is serialized by a semaphore so the
 /// predicate and the write side never race.

@@ -21,9 +21,9 @@ public sealed class HumanOnlyPolicy
     /// <summary>
     /// Gets the application's default human-only floor: the tool names that must always be a
     /// fresh human decision and can never receive a durable grant. Centralized here so every
-    /// write entry point that can persist a standing grant (the agent server and the companion
-    /// app each expose one) enforces the identical floor — a divergence between them could let one
-    /// process persist a grant the other refuses. Add a tool here when it becomes non-persistable.
+    /// write entry point that can persist a standing grant (the agent server's approvals operation)
+    /// enforces the identical floor — a divergence between them could let one
+    /// entry point persist a grant another refuses. Add a tool here when it becomes non-persistable.
     /// </summary>
     private static IReadOnlyList<string> DefaultFloorTools { get; } = ["send_email"];
 

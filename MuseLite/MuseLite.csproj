@@ -44,9 +44,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Durable approval policy library (zero external deps), shared with the console app. -->
+    <!-- Durable approval policy library (zero external deps). -->
     <ProjectReference Include="..\MuseLite.ApprovalPolicy\MuseLite.ApprovalPolicy.csproj" />
-    <!-- Durable-context building blocks (MyAgentSessionStore, snapshot store, SessionRecovery), shared with the console. -->
+    <!-- Durable-context building blocks (MyAgentSessionStore, snapshot store, SessionRecovery). -->
     <ProjectReference Include="..\MuseLite.DurableContext\MuseLite.DurableContext.csproj" />
   </ItemGroup>
 

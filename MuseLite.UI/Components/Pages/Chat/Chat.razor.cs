@@ -73,7 +73,7 @@ public partial class Chat : IAsyncDisposable
     private DateTimeOffset? LastResponseActivityUtc { get; set; }
 
     /// <summary>
-    /// True while a "new conversation" reset request is in flight to the companion. Blocks sending a new
+    /// True while a "new conversation" reset request is in flight to the server. Blocks sending a new
     /// prompt during the archive, so a fresh turn's snapshot write cannot race the reset. Pairs with the
     /// storage-level ETag <c>If-Match</c> backstop on the archive (see <c>BlobSnapshotStore</c>).
     /// </summary>
@@ -89,17 +89,16 @@ public partial class Chat : IAsyncDisposable
     private static TimeSpan ResetBlockTimeout { get; } = TimeSpan.FromSeconds(120);
 
     /// <summary>
-    /// Whether "New conversation" is currently disabled: the agent is offline/connecting, the companion
-    /// service (which performs the archive) is unreachable, a reset is already in flight, or a response is
+    /// Whether "New conversation" is currently disabled: the agent is offline/connecting, the custom
+    /// operations (which perform the archive) are unreachable, a reset is already in flight, or a response is
     /// streaming and has produced an update within <see cref="ResetBlockTimeout"/> (after that long with no
-    /// update, a presumed-stuck turn no longer blocks). Disabling reset during a live turn keeps the
-    /// companion's archive from racing the server's per-turn snapshot write; the ETag backstop covers the
-    /// residual window.
+    /// update, a presumed-stuck turn no longer blocks). Disabling reset during a live turn keeps the reset
+    /// archive from racing the server's per-turn snapshot write; the ETag backstop covers the residual window.
     /// </summary>
     private bool ResetBlocked =>
         this.ConnectionPending
         || this.ResetInFlight
-        || this.CompanionAvailable is false
+        || this.OperationsAvailable is false
         || (this.CurrentResponseMessage is not null
             && this.LastResponseActivityUtc is { } lastActivityUtc
             && DateTimeOffset.UtcNow - lastActivityUtc < ResetBlockTimeout);
@@ -107,7 +106,7 @@ public partial class Chat : IAsyncDisposable
     /// <summary>Hover explanation for a disabled "New conversation" button, or <see langword="null"/> when enabled.</summary>
     private string? NewConversationDisabledReason => this switch
     {
-        { CompanionAvailable: false } => "The service that stores conversations is unreachable right now, so a reset isn't available.",
+        { OperationsAvailable: false } => "The conversation store is unreachable right now, so a reset isn't available.",
         { ConnectionPending: true } => "Connecting to the assistant…",
         { ResetBlocked: true } => "Please wait for the current response to finish.",
         _ => null,
@@ -115,8 +114,8 @@ public partial class Chat : IAsyncDisposable
 
     /// <summary>Hover explanation for a disabled "Always approve" button, or <see langword="null"/> when enabled.</summary>
     private string? AlwaysApproveDisabledReason =>
-        (this.CompanionAvailable is false)
-            ? "Saving a standing approval needs the companion service, which is unreachable right now. You can still approve once."
+        (this.OperationsAvailable is false)
+            ? "Saving a standing approval needs the conversation store, which is unreachable right now. You can still approve once."
             : null;
 
     /// <summary>
@@ -128,17 +127,19 @@ public partial class Chat : IAsyncDisposable
     private ConnectionStatus Connection { get; set; } = ConnectionStatus.Connecting;
 
     /// <summary>
-    /// Current reachability of the companion service (history / reset / remember). Independent of the agent:
-    /// the companion being down degrades only those features and NEVER gates chat. Starts
-    /// <see cref="ConnectionStatus.Connecting"/>; driven by the same background loop as the agent.
+    /// Current reachability of the server's custom durable operations (history / reset / remember), which are
+    /// storage-backed and so can diverge from chat reachability (the container can be up while a durable read
+    /// fails). Probed via the history op, independent of the chat warm-up: these being down degrades only
+    /// those features and NEVER gates chat. Starts <see cref="ConnectionStatus.Connecting"/>; driven by the
+    /// same background loop as the agent.
     /// </summary>
-    private ConnectionStatus CompanionConnection { get; set; } = ConnectionStatus.Connecting;
+    private ConnectionStatus OperationsConnection { get; set; } = ConnectionStatus.Connecting;
 
-    /// <summary>True when the companion service is reachable, so history/reset/remember are available.</summary>
-    private bool CompanionAvailable => this.CompanionConnection == ConnectionStatus.Online;
+    /// <summary>True when the custom operations are reachable, so history/reset/remember are available.</summary>
+    private bool OperationsAvailable => this.OperationsConnection == ConnectionStatus.Online;
 
-    /// <summary>True when the companion service is unreachable — binds the disabled state of its dependent controls.</summary>
-    private bool CompanionUnavailable => this.CompanionAvailable is false;
+    /// <summary>True when the custom operations are unreachable — binds the disabled state of their dependent controls.</summary>
+    private bool OperationsUnavailable => this.OperationsAvailable is false;
 
     /// <summary>Cancels the background auto-reconnect loop (on success, a manual retry restart, or dispose).</summary>
     private CancellationTokenSource? ConnectionLoopCancellation { get; set; }
@@ -302,12 +303,13 @@ public partial class Chat : IAsyncDisposable
         this.SessionId = Guid.NewGuid().ToString();
         this.Logger.LogInformation("Started session {SessionId}", this.SessionId);
 
-        // Two independent back ends, reached by the background loop (below) rather than awaited here, so a
-        // slow agent cold-start never blocks the first paint:
-        //  • the AGENT (chat) — reachability is a no-op "warm-up" invocation, because a hosted Foundry agent
-        //    exposes no client-reachable readiness endpoint. Chat input is gated on this: no agent, no chat.
-        //  • the COMPANION (history / reset / remember) — reachability is its /history call, which doubles as
-        //    hydration. This is SOFT: it never gates chat, only the features that depend on it.
+        // Two independent reachability checks, both against the agent server, run by the background loop
+        // (below) rather than awaited here, so a slow agent cold-start never blocks the first paint:
+        //  • CHAT — reachability is a no-op "warm-up" invocation, because a hosted Foundry agent exposes no
+        //    client-reachable readiness endpoint. Chat input is gated on this: no agent, no chat.
+        //  • the custom OPERATIONS (history / reset / remember) — reachability is the history op, which
+        //    doubles as hydration and, being storage-backed, can fail while chat is up. This is SOFT: it
+        //    never gates chat, only the features that depend on it.
         // InitialConnectDone is set now (interactive only) so the connecting/offline banner and the disabled
         // input reflect the real agent state from the first interactive render while the warm-up is in flight.
         this.InitialConnectDone = true;
@@ -364,46 +366,69 @@ public partial class Chat : IAsyncDisposable
     }
 
     /// <summary>
-    /// Makes one attempt to reach the companion's <c>/history</c> endpoint. Reaching it (any HTTP response,
-    /// including an empty history) means the companion is up; a connection-level failure means it is not.
-    /// The call doubles as hydration: a clean reach carries the stored transcript back. Pure I/O with no
-    /// component-state mutation, safe to call from the background loop; callers apply the result via
-    /// <see cref="ApplyCompanionProbe"/> on the render thread. The companion is SOFT — its state never gates
-    /// chat, only the features that depend on it.
+    /// Builds a POST to the agent's <c>/invocations</c> route carrying an <c>x-client-op</c> header — the
+    /// gateway-legal way the client reaches the server's custom durable operations (history / reset /
+    /// approvals). The protocol-only hosted gateway refuses sibling routes like <c>/history</c>, but forwards
+    /// the <c>x-client-*</c> namespace, and the server dispatches on this header before any chat parsing. Uses
+    /// the same endpoint + query + bearer auth as chat (the <c>"agent"</c> client), so one config value and
+    /// one auth path cover chat and the custom ops in every environment.
     /// </summary>
-    private async Task<CompanionProbe> ProbeCompanionAsync(CancellationToken cancellationToken)
+    /// <param name="op">The operation name (<c>history</c> / <c>reset</c> / <c>approvals</c>).</param>
+    /// <param name="content">The request body, or <see langword="null"/> for a body-less op.</param>
+    /// <returns>The request message; the caller owns disposal and sends it on the <c>"agent"</c> client.</returns>
+    private HttpRequestMessage CreateAgentOpRequest(string op, HttpContent? content)
+    {
+        string endpoint = this.Configuration["AgentEndpoint"] ?? "invocations";
+        string query = this.Configuration["AgentEndpointQuery"] ?? string.Empty;
+        var request = new HttpRequestMessage(HttpMethod.Post, $"{endpoint}{query}") { Content = content };
+        request.Headers.TryAddWithoutValidation("x-client-op", op);
+        return request;
+    }
+
+    /// <summary>
+    /// Makes one attempt to reach the server's history operation (POST <c>/invocations</c> with
+    /// <c>x-client-op: history</c>). Reaching it (any HTTP response, including an empty history) means the
+    /// server's custom ops are up; a connection-level failure means they are not. The call doubles as
+    /// hydration: a clean reach carries the stored transcript back. Pure I/O with no component-state
+    /// mutation, safe to call from the background loop; callers apply the result via
+    /// <see cref="ApplyOperationsProbe"/> on the render thread. This state is SOFT — it never gates chat, only
+    /// the features that depend on it (history / reset / remember).
+    /// </summary>
+    private async Task<OperationsProbe> ProbeOperationsAsync(CancellationToken cancellationToken)
     {
         try
         {
-            string endpoint = this.Configuration["CompanionEndpoint"] ?? "invocations";
-            HttpClient httpClient = this.HttpClientFactory.CreateClient("companion");
+            HttpClient httpClient = this.HttpClientFactory.CreateClient("agent");
+            using HttpRequestMessage request = this.CreateAgentOpRequest(
+                "history", new StringContent("{}", Encoding.UTF8, "application/json"));
 
-            var history = await httpClient.GetFromJsonAsync<List<HistoryMessage>>(
-                $"{endpoint}/history", cancellationToken);
-            return new CompanionProbe(Reached: true, History: history, Errored: false);
+            using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
+            response.EnsureSuccessStatusCode();
+            var history = await response.Content.ReadFromJsonAsync<List<HistoryMessage>>(cancellationToken);
+            return new OperationsProbe(Reached: true, History: history, Errored: false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested is true)
         {
             // Our own cancellation; the caller discards this. Not a reachability signal.
-            return new CompanionProbe(Reached: false, History: null, Errored: false);
+            return new OperationsProbe(Reached: false, History: null, Errored: false);
         }
         catch (HttpRequestException ex) when (ex.StatusCode is null)
         {
-            // No HTTP status => the request never reached the companion (connection refused / DNS / socket).
+            // No HTTP status => the request never reached the server (connection refused / DNS / socket).
             // Logged once on the state transition, not per retry attempt.
-            return new CompanionProbe(Reached: false, History: null, Errored: false);
+            return new OperationsProbe(Reached: false, History: null, Errored: false);
         }
         catch (TaskCanceledException)
         {
             // HttpClient request timeout => unreachable.
-            return new CompanionProbe(Reached: false, History: null, Errored: false);
+            return new OperationsProbe(Reached: false, History: null, Errored: false);
         }
         catch (Exception ex)
         {
-            // Reached the companion but the history call itself failed (e.g. a transient error carrying an
-            // HTTP status). Don't treat as offline over a data error — reachable, with an empty chat.
+            // Reached the server but the history call itself failed (e.g. a non-success status from
+            // EnsureSuccessStatusCode). Don't treat as offline over a data error — reachable, empty chat.
             this.Logger.LogWarning(ex, "History hydration failed; starting with an empty chat.");
-            return new CompanionProbe(Reached: true, History: null, Errored: true);
+            return new OperationsProbe(Reached: true, History: null, Errored: true);
         }
     }
 
@@ -445,30 +470,30 @@ public partial class Chat : IAsyncDisposable
     }
 
     /// <summary>
-    /// Applies a <see cref="ProbeCompanionAsync"/> result to the companion's <see cref="CompanionConnection"/>
-    /// state and, on the first clean reach, paints the hydrated transcript. The companion is SOFT — this
-    /// never touches the chat gate. Must run on the render thread.
+    /// Applies a <see cref="ProbeOperationsAsync"/> result to the <see cref="OperationsConnection"/> state
+    /// and, on the first clean reach, paints the hydrated transcript. The operations are SOFT — this never
+    /// touches the chat gate. Must run on the render thread.
     /// </summary>
-    private void ApplyCompanionProbe(CompanionProbe probe)
+    private void ApplyOperationsProbe(OperationsProbe probe)
     {
         if (probe.Reached is false)
         {
-            if (this.CompanionConnection != ConnectionStatus.Offline)
+            if (this.OperationsConnection != ConnectionStatus.Offline)
             {
                 this.Logger.LogInformation(
-                    "Companion service not reachable; history/reset/remember are unavailable until it returns.");
+                    "Custom operations not reachable; history/reset/remember are unavailable until they return.");
             }
 
-            this.CompanionConnection = ConnectionStatus.Offline;
+            this.OperationsConnection = ConnectionStatus.Offline;
             return;
         }
 
-        if (this.CompanionConnection == ConnectionStatus.Offline)
+        if (this.OperationsConnection == ConnectionStatus.Offline)
         {
-            this.Logger.LogInformation("Companion service reachable again.");
+            this.Logger.LogInformation("Custom operations reachable again.");
         }
 
-        // Hydrate the stored transcript only on the FIRST successful companion reach, and never after the
+        // Hydrate the stored transcript only on the FIRST successful reach, and never after the
         // user has started a turn (AddUserMessageAsync also sets InitialHydrationDone) — otherwise a late
         // or reconnect hydration would repaint prior history on top of the live conversation.
         if (probe.Errored is false && this.InitialHydrationDone is false)
@@ -477,7 +502,7 @@ public partial class Chat : IAsyncDisposable
         }
 
         this.InitialHydrationDone = true;
-        this.CompanionConnection = ConnectionStatus.Online;
+        this.OperationsConnection = ConnectionStatus.Online;
     }
 
     /// <summary>
@@ -552,9 +577,9 @@ public partial class Chat : IAsyncDisposable
     }
 
     /// <summary>
-    /// Reaches the two back ends with exponential backoff until BOTH are online, applying each result on the
-    /// render thread. Re-probes only the back end(s) not already online — so a healthy agent is never
-    /// re-warmed on the companion's account (no steady-state warm-up heartbeat), and vice-versa. The first
+    /// Runs both reachability checks with exponential backoff until BOTH are online, applying each result on
+    /// the render thread. Re-probes only the check(s) not already online — so a healthy agent is never
+    /// re-warmed on the operations' account (no steady-state warm-up heartbeat), and vice-versa. The first
     /// iteration runs immediately (local connects flip fast); failures back off. Runs in the background.
     /// </summary>
     private async Task RunConnectionLoopAsync(CancellationToken cancellationToken)
@@ -576,9 +601,9 @@ public partial class Chat : IAsyncDisposable
 
             bool agentReached = this.Connection == ConnectionStatus.Online
                 || await this.WarmUpAgentAsync(cancellationToken);
-            CompanionProbe? companionProbe = this.CompanionConnection == ConnectionStatus.Online
+            OperationsProbe? operationsProbe = this.OperationsConnection == ConnectionStatus.Online
                 ? null
-                : await this.ProbeCompanionAsync(cancellationToken);
+                : await this.ProbeOperationsAsync(cancellationToken);
 
             // CA1508: the analyzer wrongly concludes this is always false. The token can be cancelled during
             // the probe awaits (dispose, or a manual retry restarting the loop); the probes swallow that
@@ -595,9 +620,9 @@ public partial class Chat : IAsyncDisposable
                 await this.InvokeAsync(() =>
                 {
                     this.ApplyAgentReachability(agentReached);
-                    if (companionProbe is { } probe)
+                    if (operationsProbe is { } probe)
                     {
-                        this.ApplyCompanionProbe(probe);
+                        this.ApplyOperationsProbe(probe);
                     }
 
                     this.StateHasChanged();
@@ -610,7 +635,7 @@ public partial class Chat : IAsyncDisposable
                 return;
             }
 
-            if (this.Connection == ConnectionStatus.Online && this.CompanionConnection == ConnectionStatus.Online)
+            if (this.Connection == ConnectionStatus.Online && this.OperationsConnection == ConnectionStatus.Online)
             {
                 return;
             }
@@ -630,17 +655,17 @@ public partial class Chat : IAsyncDisposable
 
         bool agentReached = this.Connection == ConnectionStatus.Online
             || await this.WarmUpAgentAsync(CancellationToken.None);
-        CompanionProbe? companionProbe = this.CompanionConnection == ConnectionStatus.Online
+        OperationsProbe? operationsProbe = this.OperationsConnection == ConnectionStatus.Online
             ? null
-            : await this.ProbeCompanionAsync(CancellationToken.None);
+            : await this.ProbeOperationsAsync(CancellationToken.None);
 
         this.ApplyAgentReachability(agentReached);
-        if (companionProbe is { } probe)
+        if (operationsProbe is { } probe)
         {
-            this.ApplyCompanionProbe(probe);
+            this.ApplyOperationsProbe(probe);
         }
 
-        if (this.Connection != ConnectionStatus.Online || this.CompanionConnection != ConnectionStatus.Online)
+        if (this.Connection != ConnectionStatus.Online || this.OperationsConnection != ConnectionStatus.Online)
         {
             this.StartConnectionLoop();
         }
@@ -682,13 +707,13 @@ public partial class Chat : IAsyncDisposable
 
     /// <summary>
     /// Whether to show the first-run suggestion chips. Once the agent is online AND either the initial
-    /// history has hydrated or the companion is confirmed offline (no history is coming). Waiting for
+    /// history has hydrated or the operations are confirmed offline (no history is coming). Waiting for
     /// hydration avoids a client with an existing conversation flashing the chips before the stored
-    /// transcript paints; the companion-offline case still shows them so a companion outage is not a blank
+    /// transcript paints; the operations-offline case still shows them so an operations outage is not a blank
     /// empty state while chat itself works.
     /// </summary>
     private bool ShowSuggestions => this.Connection == ConnectionStatus.Online
-        && (this.InitialHydrationDone is true || this.CompanionConnection == ConnectionStatus.Offline);
+        && (this.InitialHydrationDone is true || this.OperationsConnection == ConnectionStatus.Offline);
 
     /// <summary>
     /// True once the first connectivity check has completed, so the <see cref="Connection"/> status is a
@@ -715,24 +740,24 @@ public partial class Chat : IAsyncDisposable
     };
 
     /// <summary>
-    /// Minimal display projection returned by the server's <c>/history</c> endpoint: a role
-    /// (<c>"user"</c> / <c>"assistant"</c>) and the message text.
+    /// Minimal display projection returned by the server's history operation (<c>x-client-op: history</c>):
+    /// a role (<c>"user"</c> / <c>"assistant"</c>) and the message text.
     /// </summary>
     [System.Diagnostics.CodeAnalysis.SuppressMessage(
         "Performance",
         "CA1812:Avoid uninstantiated internal classes",
-        Justification = "Instantiated by System.Text.Json when deserializing the /history response.")]
+        Justification = "Instantiated by System.Text.Json when deserializing the history operation's response.")]
     private sealed record HistoryMessage(string Role, string Text, ImageResult? Images = null);
 
-    /// <summary>Result of one <see cref="ProbeCompanionAsync"/> attempt.</summary>
-    /// <param name="Reached">True if the companion responded at all (even with an empty history).</param>
+    /// <summary>Result of one <see cref="ProbeOperationsAsync"/> attempt.</summary>
+    /// <param name="Reached">True if the server responded at all (even with an empty history).</param>
     /// <param name="History">The hydrated transcript when the probe reached cleanly; otherwise null.</param>
-    /// <param name="Errored">True if the companion was reached but the history call itself failed.</param>
-    private readonly record struct CompanionProbe(bool Reached, List<HistoryMessage>? History, bool Errored);
+    /// <param name="Errored">True if the server was reached but the history call itself failed.</param>
+    private readonly record struct OperationsProbe(bool Reached, List<HistoryMessage>? History, bool Errored);
 
     /// <summary>
-    /// Body of the "remember this grant permanently" request sent to the server's <c>/approvals</c>
-    /// endpoint: the gated tool's name and the exact arguments it was called with, as a JSON object. The
+    /// Body of the "remember this grant permanently" request sent to the server's approvals operation
+    /// (<c>x-client-op: approvals</c>): the gated tool's name and the exact arguments it was called with, as a JSON object. The
     /// server canonicalizes the arguments itself (so the stored rule matches the auto-approval predicate).
     /// Serialized camelCase.
     /// </summary>
@@ -780,11 +805,11 @@ public partial class Chat : IAsyncDisposable
 
         try
         {
-            string endpoint = this.Configuration["CompanionEndpoint"] ?? "invocations";
-            HttpClient httpClient = this.HttpClientFactory.CreateClient("companion");
+            HttpClient httpClient = this.HttpClientFactory.CreateClient("agent");
+            using HttpRequestMessage request = this.CreateAgentOpRequest(
+                "reset", new StringContent("{}", Encoding.UTF8, "application/json"));
 
-            using HttpResponseMessage response =
-                await httpClient.PostAsync(new Uri($"{endpoint}/reset", UriKind.Relative), content: null, CancellationToken.None);
+            using HttpResponseMessage response = await httpClient.SendAsync(request, CancellationToken.None);
             response.EnsureSuccessStatusCode();
         }
         catch (Exception ex)
@@ -824,7 +849,7 @@ public partial class Chat : IAsyncDisposable
         this.PendingApproval = null;
         this.ApprovalRememberConfirmVisible = false;
 
-        // If the user starts a turn before the stored transcript has hydrated (companion slow or unreachable),
+        // If the user starts a turn before the stored transcript has hydrated (operations slow or unreachable),
         // suppress a later hydration so it can't repaint prior history on top of this live conversation.
         this.InitialHydrationDone = true;
 
@@ -835,17 +860,28 @@ public partial class Chat : IAsyncDisposable
         }
 
         var responseText = new TextContent("");
-        this.CurrentResponseMessage = new ChatMessage(ChatRole.Assistant, [responseText]);
+        var responseMessage = new ChatMessage(ChatRole.Assistant, [responseText]);
+        var cancellation = new CancellationTokenSource();
+        this.CurrentResponseMessage = responseMessage;
         this.LastResponseActivityUtc = DateTimeOffset.UtcNow;
-        this.CurrentResponseCancellation = new CancellationTokenSource();
+        this.CurrentResponseCancellation = cancellation;
 
         var outboundMessages = this.BuildOutboundMessages();
-        await this.GetStreamingResponseAsync(outboundMessages, responseText, this.CurrentResponseMessage,
-            this.CurrentResponseCancellation.Token);
+        await this.GetStreamingResponseAsync(outboundMessages, responseText, responseMessage,
+            cancellation.Token);
 
-        this.Messages.Add(this.CurrentResponseMessage);
-        this.StatefulMessageCount = this.ActiveSession is not null ? this.Messages.Count : 0;
-        this.CurrentResponseMessage = null;
+        // Finalize THIS turn only if it was not superseded. If the user sent another message while this
+        // reply was streaming, CancelAnyCurrentResponse cancelled our token AND already committed this
+        // turn's partial message — so re-adding would duplicate it, and clearing the shared field would
+        // null the newer turn's in-progress pointer (and later commit a null). Guarding on our own
+        // captured token lets each turn finalize only its own state. Commit the LOCAL responseMessage,
+        // never this.CurrentResponseMessage, which a newer turn may have reassigned.
+        if (cancellation.IsCancellationRequested is false)
+        {
+            this.Messages.Add(responseMessage);
+            this.StatefulMessageCount = this.ActiveSession is not null ? this.Messages.Count : 0;
+            this.CurrentResponseMessage = null;
+        }
     }
 
     private async Task SendSuggestionAsync(string text)
@@ -908,7 +944,7 @@ public partial class Chat : IAsyncDisposable
 
         // Write the durable grant server-side (where the auto-approval predicate reads it). Only an
         // exact-args tool call can be remembered; a request without a FunctionCallContent falls back to
-        // approve-once, same as the console.
+        // approve-once.
         var remembered = toolCall is not null && await this.PersistApprovalAsync(toolCall);
 
         var toolName = toolCall?.Name ?? "the tool";
@@ -931,8 +967,7 @@ public partial class Chat : IAsyncDisposable
     {
         try
         {
-            string endpoint = this.Configuration["CompanionEndpoint"] ?? "invocations";
-            HttpClient httpClient = this.HttpClientFactory.CreateClient("companion");
+            HttpClient httpClient = this.HttpClientFactory.CreateClient("agent");
 
             // Serialize the arguments to a JSON object so the record carries a JsonElement (symmetric with
             // the server's request shape); the server canonicalizes it with the same ArgCanonicalizer the
@@ -940,8 +975,8 @@ public partial class Chat : IAsyncDisposable
             JsonElement arguments = JsonSerializer.SerializeToElement(
                 toolCall.Arguments ?? new Dictionary<string, object?>(StringComparer.Ordinal));
             var body = new PersistApprovalRequest(toolCall.Name, arguments);
-            using HttpResponseMessage response = await httpClient.PostAsJsonAsync(
-                $"{endpoint}/approvals", body, CancellationToken.None);
+            using HttpRequestMessage request = this.CreateAgentOpRequest("approvals", JsonContent.Create(body));
+            using HttpResponseMessage response = await httpClient.SendAsync(request, CancellationToken.None);
 
             if (response.IsSuccessStatusCode is false)
             {
@@ -992,14 +1027,16 @@ public partial class Chat : IAsyncDisposable
         AdditionalPropertiesDictionary? markerProperties)
     {
         var responseText = new TextContent("");
-        this.CurrentResponseMessage = new ChatMessage(ChatRole.Assistant, [responseText]);
+        var responseMessage = new ChatMessage(ChatRole.Assistant, [responseText]);
         this.LastResponseActivityUtc = DateTimeOffset.UtcNow;
         if (markerProperties is not null)
         {
-            this.CurrentResponseMessage.AdditionalProperties = markerProperties;
+            responseMessage.AdditionalProperties = markerProperties;
         }
 
-        this.CurrentResponseCancellation = new CancellationTokenSource();
+        this.CurrentResponseMessage = responseMessage;
+        var cancellation = new CancellationTokenSource();
+        this.CurrentResponseCancellation = cancellation;
 
         var toolCall = request.ToolCall as FunctionCallContent;
 
@@ -1030,13 +1067,18 @@ public partial class Chat : IAsyncDisposable
         await this.GetStreamingResponseAsync(
             [],
             responseText,
-            this.CurrentResponseMessage,
-            this.CurrentResponseCancellation.Token,
+            responseMessage,
+            cancellation.Token,
             resume);
 
-        this.Messages.Add(this.CurrentResponseMessage);
-        this.StatefulMessageCount = this.ActiveSession is not null ? this.Messages.Count : 0;
-        this.CurrentResponseMessage = null;
+        // Same supersede guard as AddUserMessageAsync (see the comment there for the full rationale):
+        // finalize only if a newer turn did not cancel this one, and commit the LOCAL responseMessage.
+        if (cancellation.IsCancellationRequested is false)
+        {
+            this.Messages.Add(responseMessage);
+            this.StatefulMessageCount = this.ActiveSession is not null ? this.Messages.Count : 0;
+            this.CurrentResponseMessage = null;
+        }
     }
 
     private async Task GetStreamingResponseAsync(
@@ -1488,6 +1530,14 @@ public partial class Chat : IAsyncDisposable
         return this.Messages.Skip(this.StatefulMessageCount);
     }
 
+    // DESIGN TRIP-WIRE — read before adding a "stop generating" control. This commits the in-flight
+    // turn's partial message to the transcript BEFORE cancelling, and the turn-finalize tails in
+    // AddUserMessageAsync / SendApprovalResponseAsync deliberately SKIP their own commit when their
+    // token was cancelled (so a superseded turn neither double-adds nor nulls the newer turn's
+    // in-progress pointer). Those two facts are coupled: a stop control must route through here (or
+    // otherwise commit the partial itself). Cancelling this.CurrentResponseCancellation directly would
+    // cancel the token — making the tail skip — WITHOUT committing the partial, silently dropping the
+    // user's partial reply.
     private void CancelAnyCurrentResponse()
     {
         if (this.CurrentResponseMessage is not null)
